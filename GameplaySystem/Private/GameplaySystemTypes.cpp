@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplaySystemTypes.h"
@@ -85,6 +85,13 @@ UGameplayAbility* FGameplaySystemAnimMontageInfo::GetAnimatingAbility() const
 	}
 
 	return nullptr;
+}
+
+FGameplaySystemSnapshot::FGameplaySystemSnapshot(UGameplaySystemComponent* GameplaySystem)
+{
+	GameplaySystem->GetAttributes(Attributes);
+
+	GameplayTags = *GameplaySystem->GetGameplayTagSystem();
 }
 
 FGameplayTagBlueprintPropertyMap::FGameplayTagBlueprintPropertyMap(const FGameplayTagBlueprintPropertyMap& Other)

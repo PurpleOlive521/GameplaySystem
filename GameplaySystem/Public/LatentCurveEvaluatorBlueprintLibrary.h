@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -11,13 +11,6 @@
 
 class UGameplayEvent;
 
-UENUM()
-enum class EPlayTypePins : uint8
-{
-	Play,
-	ReverseFromEnd,
-};
-
 UCLASS()
 class GAMEPLAYSYSTEM_API ULatentCurveEvaluatorBlueprintLibrary : public UBlueprintFunctionLibrary
 {
@@ -26,15 +19,15 @@ class GAMEPLAYSYSTEM_API ULatentCurveEvaluatorBlueprintLibrary : public UBluepri
 public:
 
 	// Returns the created LatentCurveEvaluator.
-	// Will use the last key in the CurveFloat if EndTime is left empty.
+	// Will play until the last key in the CurveFloat if EndTime is left empty.
 	UFUNCTION(BlueprintCallable, meta = (HidePin = "Owner", DefaultToSelf = "Owner"), Category = "LatentCurveEvaluatorBlueprintLibrary")
-	static ULatentCurveEvaluator* CreateLatentCurveEvaluator(UCurveFloat* InCurve, UObject* Owner, const FOnUpdateEvaluationSignature& OnUpdateEvaluationFunction, const FOnFinishedEvaluationSignature& OnFinishedEvaluationFunction,
-															float EndTime = 0.0f, bool bEvaluateWhenPaused = false);
+	static ULatentCurveEvaluator* CreateLatentCurveEvaluator(UCurveFloat* InCurve, UObject* Owner, const FOnEvaluateSignature& OnEvaluateDelegate, 
+		const FOnFinishedSignature& OnFinishedDelegate, float EndTime = -1.0f, bool bEvaluateWhenPaused = false);
 
 	// Immediately starts the LatentCurveEvaluator on creation.
-	// Will use the last key in the CurveFloat if EndTime is left empty.
+	// Will play until the the last key in the CurveFloat if EndTime is left empty.
 	UFUNCTION(BlueprintCallable, meta = (HidePin = "Owner", DefaultToSelf = "Owner", ExpandEnumAsExecs = "PlayType"), Category = "LatentCurveEvaluatorBlueprintLibrary")
-	static ULatentCurveEvaluator* CreateAndPlayLatentCurveEvaluator(EPlayTypePins PlayType, UCurveFloat* InCurve, UObject* Owner, const FOnUpdateEvaluationSignature& OnUpdateEvaluationFunction, const FOnFinishedEvaluationSignature& OnFinishedEvaluationFunction,
-																	float EndTime = 0.0f, bool bEvaluateWhenPaused = false);
+	static ULatentCurveEvaluator* CreateAndPlayLatentCurveEvaluator(EEvaluatorPlayTypePins PlayType, UCurveFloat* InCurve, UObject* Owner,
+		const FOnEvaluateSignature& OnEvaluateDelegate, const FOnFinishedSignature& OnFinishedDelegate, float EndTime = -1.0f, bool bEvaluateWhenPaused = false);
 				
 };

@@ -1,7 +1,6 @@
 // Copyright Epic Games, Inc. All Rights Reserved.
 
 // All credit to Unreal's GameplayAbilitySystem.
-
 #include "GameplayTagBlueprintPropertyMappingDetails.h"
 #include "GameplaySystemTypes.h"
 #include "PropertyHandle.h"

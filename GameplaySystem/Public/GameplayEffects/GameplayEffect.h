@@ -1,118 +1,23 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "UObject/NoExportTypes.h"
 
+#include "GameplayEffectTypes.h"
+#include "GameplayEffectExecutor.h"
+#include "GameplayEffectCondition.h"
+
 #include "GameplayTagContainer.h"
 #include "AttributeEffect.h"
 #include "GameplayTagTypes.h"
+#include "GameplaySystemTypes.h"
 #include "GuidTag.h"
 
 #include "GameplayEffect.generated.h"
 
 class UGameplaySystemComponent;
-
-UENUM(BlueprintType)
-enum class EDurationType : uint8
-{
-	EDT_Instant		UMETA(DisplayName = "Instant"),
-	EDT_HasDuration	UMETA(DisplayName = "Has Duration"),
-	EDT_Infinite	UMETA(DisplayName = "Infinite"),
-};
-
-UENUM(BlueprintType)
-enum class EPeriodApplicationType : uint8
-{
-	EPAT_ExecuteOnApplication		UMETA(DisplayName = "Execute Effects When Applied"),
-	EPAT_ReapplicationOnly			UMETA(DisplayName = "Reapplication Only"),
-	EPAT_ExecuteOnRemoval			UMETA(DisplayName = "Execute Effects When Removed"),
-};
-
-// Might be used in more places in the future, but is currently only used for GEE's.
-USTRUCT(BlueprintType)
-struct GAMEPLAYSYSTEM_API FCoefficientAttribute
-{
-	GENERATED_BODY();
-
-	// Interpreted as a normal value if Attribute is NONE.
-	UPROPERTY(EditAnywhere)
-	float Coefficient = 1.0f;
-
-	// The attribute we want to use.
-	UPROPERTY(EditAnywhere)
-	EAttributeType Attribute = EAttributeType::EAT_NONE;
-
-	// The value of the given attribute that we multiply the coefficient with.
-	UPROPERTY(EditAnywhere)
-	EAttributeValue Target = EAttributeValue::EAV_BaseValue;
-};
-
-struct GAMEPLAYSYSTEM_API FGameplayEffectConstants
-{
-	// The GameplayEffect has no period, meaning it does not periodically apply it's effects.
-	static const float NO_PERIOD;
-
-	// The GameplayEffect has no duration, meaning it needs to be expliticly removed.
-	static const float INFINITE_DURATION;
-};
-
-struct FGameplayEffectExecutorParams
-{
-	FGameplayEffectExecutorParams(const UGameplayEffect* InGameplayEffect, FActiveGameplayEffect* InActiveGameplayEffect, UGameplaySystemComponent* InComponent)
-		: GameplayEffect(InGameplayEffect), ActiveGameplayEffect(InActiveGameplayEffect), GameplaySystem(InComponent) {};
-
-	const UGameplayEffect* GameplayEffect = nullptr;
-
-	FActiveGameplayEffect* ActiveGameplayEffect = nullptr;
-
-	UGameplaySystemComponent* GameplaySystem = nullptr;
-};
-
-/*
-* Customises the response to a GameplayEffects lifetime events. 
-* Allows for replacing the default behaviour with custom per-property behaviour.
-*/
-UCLASS(Blueprintable)
-class GAMEPLAYSYSTEM_API UGameplayEffectExecutor : public UObject
-{
-	GENERATED_BODY()
-
-public:
-	UGameplayEffectExecutor() = default;
-
-	virtual void OnGameplayEffectApplied(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToApply, const FGameplayTagModifierContainer& TagModifiers) const;
-
-	virtual void OnGameplayEffectRemoved(FGameplayEffectExecutorParams Params) const;
-
-	virtual void OnGameplayEffectReapplied(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToReapply) const;
-
-protected:
-	void PerformDefaultApply(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToApply, const FGameplayTagModifierContainer& TagModifiers) const;
-
-	void PerformDefaultRemove(FGameplayEffectExecutorParams Params) const;
-
-	void PerformDefaultReapply(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToReapply) const;
-
-private:
-	void Apply_Internal(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToApply, const FGameplayTagModifierContainer& TagModifiers) const;
-};
-
-/*
-* Custom requirements that needs to pass for a GameplayEffect to be applied.
-* Does not replace the base GameplayEffect behaviour.
-*/
-UCLASS(Blueprintable)
-class GAMEPLAYSYSTEM_API UGameplayEffectApplicationRequirements : public UObject
-{
-	GENERATED_BODY()
-
-public:
-	UGameplayEffectApplicationRequirements() = default;
-
-	virtual bool CanApply(const UGameplayEffect* GameplayEffect, UGameplaySystemComponent* Component) const { return true; };
-};
 
 /*
  * Class for creating Gameplay Effects.
@@ -141,9 +46,14 @@ public:
 	// Allows us to do any work that is not in relation to the state of the GameplayEffect on removal.
 	bool RemoveGameplayEffect(UGameplaySystemComponent* GameplaySystem, AActor* Actor, FActiveGameplayEffect& ActiveGameplayEffect, const FGameplayEffectHandle& Handle) const;
 
-	const UGameplayEffectExecutor* GetExecutorClass() const;
+	// Fires the Modules in order, finishing with the static per-Stage call.
+	void FireExecutorPipeline(const FGameplayEffectExecutorParams& Params, EGameplayEffectStage Stage) const;
 
-	const UGameplayEffectApplicationRequirements* GetActivationRequirementsClass() const;
+	// Fires the Modules in order. If any one fails, it returns false immediately. All must succeed to return true.
+	bool FireConditionPipeline(const FGameplayEffectConditionParams& Params, EGameplayEffectStage Stage) const;
+	
+	// Returns true if the GameplayEffect is applied through Period settings. 
+	bool IsAppliedOnTick() const;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	FString Name = "New Gameplay Effect";
@@ -159,24 +69,28 @@ public:
 	EDurationType DurationType = EDurationType::EDT_Instant;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "DurationType == EDurationType::EDT_HasDuration"))
-	float Duration = 0;
+	float Duration = FGameplayEffectConstants::NO_DURATION;
 
 	// 0.0 if none. The period of time between the Attribute Effects being applied or reapplied.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "DurationType != EDurationType::EDT_Instant"))
-	float PeriodLength = 0.0f;
+	float PeriodLength = FGameplayEffectConstants::NO_PERIOD;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "PeriodLength != 0.0f", EditConditionHides))
 	EPeriodApplicationType PeriodType = EPeriodApplicationType::EPAT_ExecuteOnApplication;
 
 	// Only allows one instance of this GameplayEffect to exist in the same GameplaySystemComponent.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Uniqueness")
 	bool bIsUnique = false;
 
 	// Will replace the existing GameplayEffect if true, or fail to apply if false.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "bIsUnique"))
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = "bIsUnique"), Category = "Uniqueness")
 	bool bOverwriteOnUnique = false;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, meta = (EditCondition = false))
+	// If true, any tracked modifications done by this GameplayEffect will be undone.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
+	bool bUndoModifiersOnRemoval = true;
+
+	UPROPERTY(VisibleDefaultsOnly, Category = "Uniqueness")
 	FGuidTag Id;
 
 	// Removes any GameplayEffects on the target GameplaySystem that match this query when this GameplayEffect is applied.
@@ -193,17 +107,13 @@ public:
 
 protected:
 
-	// The class used when responding to lifetime events. Does not replace default behaviour, only adds onto it!
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overrides")
-	TSubclassOf<UGameplayEffectExecutor> ExecutorClass = nullptr;
+	// The classes used when responding to lifetime events. Called in the order they appear in.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Instanced, Category = "ModulePipeline")
+	TArray<TObjectPtr<UGameplayEffectExecutor>> ExecutorModules;
 
-	// The class used for custom activation requirements. Does not replace default behaviour, only adds onto it!
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Overrides")
-	TSubclassOf<UGameplayEffectApplicationRequirements> ActivationRequirementsClass = nullptr;
-
-private:
-	
-	void FillEmptyClasses();
+	// The class used for custom activation requirements. Called in the order they appear in.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Instanced, Category = "ModulePipeline")
+	TArray<TObjectPtr<UGameplayEffectCondition>> ConditionModules;
 };
 
 /*

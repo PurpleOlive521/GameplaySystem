@@ -1,5 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
-
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -26,11 +25,29 @@ struct GAMEPLAYSYSTEM_API FAttributeDisplayInfo
 
 	FAttributeDisplayInfo() = default;
 
+	static FAttributeDisplayInfo MakeInvalid();
+
 	UPROPERTY(BlueprintReadWrite, Category = "AttributeDisplayInfo")
 	FString TypeInfo = "";
 
 	UPROPERTY(BlueprintReadWrite, Category = "AttributeDisplayInfo")
 	FString ValueInfo = "";
+};
+
+USTRUCT(BlueprintType)
+struct GAMEPLAYSYSTEM_API FEventsDisplayInfo
+{
+	GENERATED_BODY()
+
+	FEventsDisplayInfo() = default;
+
+	static FEventsDisplayInfo MakeInvalid();
+
+	UPROPERTY(BlueprintReadWrite, Category = "EventsDisplayInfo")
+	FString ActiveEvents = "";
+
+	UPROPERTY(BlueprintReadWrite, Category = "EventsDisplayInfo")
+	FString InactiveEvents = "";
 };
 
 // Can affect performance when using the debug view, since we recalculate attributes every frame with this enabled.
@@ -108,10 +125,10 @@ public:
 	FString GetGameplayTagSystemDisplayInfo() const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "DebugWidget")
-	FString GetGlobalGameplayEventDisplayInfo() const;
+	FEventsDisplayInfo GetGlobalGameplayEventDisplayInfo() const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "DebugWidget")
-	FString GetActorGameplayEventDisplayInfo() const;
+	FEventsDisplayInfo GetActorGameplayEventDisplayInfo() const;
 
 	// Draws lines on the current targets owning Actor to help identify the current Actor.
 	UFUNCTION(BlueprintCallable, Category = "DebugWidget")

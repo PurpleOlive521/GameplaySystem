@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplaySystemDebugWidget.h"
@@ -15,8 +15,25 @@
 #include "GameplaySystemBlueprintLibrary.h"
 #include "DevelopmentTypes.h"
 
-// Helps make the tags shorter, making the FStrings more readable
 using namespace DebugTypes;
+
+FAttributeDisplayInfo FAttributeDisplayInfo::MakeInvalid()
+{
+	FAttributeDisplayInfo Info = {};
+	Info.TypeInfo = "Invalid";
+	Info.ValueInfo = "0";
+
+	return Info;
+}
+
+FEventsDisplayInfo FEventsDisplayInfo::MakeInvalid()
+{
+	FEventsDisplayInfo Info = {};
+	Info.ActiveEvents = "Invalid";
+	Info.InactiveEvents = "Invalid";
+
+	return Info;
+}
 
 TArray<TWeakObjectPtr<UGameplaySystemComponent>> UGameplaySystemDebugWidget::ActiveSystemCandidates = {};
 
@@ -215,49 +232,64 @@ FString UGameplaySystemDebugWidget::GetGameplayTagSystemDisplayInfo() const
 	return DisplayInfo;
 }
 
-FString UGameplaySystemDebugWidget::GetGlobalGameplayEventDisplayInfo() const
+FEventsDisplayInfo UGameplaySystemDebugWidget::GetGlobalGameplayEventDisplayInfo() const
 {
 	UGameplayEventSubsystem* EventSubsystem = BoundEventSubsystem.Get();
 	if (!EventSubsystem)
 	{
-		return FString();
+		return FEventsDisplayInfo();
 	}
 
 	int ActiveEventCount = 0;
-	FString Content = {};
+	FString ActiveContent = {};
+
+	int InactiveEventCount = 0;
+	FString InactiveContent = {};
 	for (const auto& [Handle, Event] : EventSubsystem->EventMap)
 	{
 		if (Event->IsActive())
 		{
-			Content += Event->ToStringWithDebugTags() + ENDL;
+			ActiveContent += Event->ToStringWithDebugTags() + ENDL;
 			ActiveEventCount++;
+		}
+		else
+		{
+			InactiveContent += Event->ToStringWithDebugTags() + ENDL;
+			InactiveEventCount++;
 		}
 	}
 
-	FString DisplayInfo = TextTag_Header + FString::Printf(TEXT("Total Active GameplayEvents: %d"), ActiveEventCount) + TextTag_End + ENDL;
+	FEventsDisplayInfo DisplayInfo;
 
-	DisplayInfo += Content;
-	
+	FString ActiveTitle = TextTag_Header + FString::Printf(TEXT("Total Active GameplayEvents: %d"), ActiveEventCount) + TextTag_End + ENDL;
+	DisplayInfo.ActiveEvents = ActiveTitle + ActiveContent;
+
+	FString InactiveTitle = TextTag_Header + FString::Printf(TEXT("Total Inactive GameplayEvents: %d"), InactiveEventCount) + TextTag_End + ENDL;
+	DisplayInfo.InactiveEvents = InactiveTitle + InactiveContent;
+
 	return DisplayInfo;
 }
 
-FString UGameplaySystemDebugWidget::GetActorGameplayEventDisplayInfo() const
+FEventsDisplayInfo UGameplaySystemDebugWidget::GetActorGameplayEventDisplayInfo() const
 {
 	UGameplayEventSubsystem* EventSubsystem = BoundEventSubsystem.Get();
 	if (!EventSubsystem)
 	{
-		return FString();
+		return FEventsDisplayInfo::MakeInvalid();
 	}
 
 	UGameplaySystemComponent* GameplaySystem = BoundGameplaySystem.Get();
 	AActor* OwningActor = GameplaySystem->GetOwner();
 	if (!GameplaySystem || !OwningActor)
 	{
-		return FString();
+		return FEventsDisplayInfo::MakeInvalid();
 	}
 
 	int ActiveEventCount = 0;
-	FString Content = {};
+	FString ActiveContent;
+
+	int InactiveEventCount = 0;
+	FString InactiveContent;
 
 	FActorGameplayEventContainer EventContainer = EventSubsystem->PerActorEventMap.FindRef(OwningActor);
 	TArray<UGameplayEvent*> ActorEvents;
@@ -266,19 +298,29 @@ FString UGameplaySystemDebugWidget::GetActorGameplayEventDisplayInfo() const
 	{
 		if (!Event)
 		{
+			// Event is GC'd
 			continue;
 		}
 
 		if (Event->IsActive())
 		{
-			Content += Event->ToStringWithDebugTags() + ENDL;
+			ActiveContent += Event->ToStringWithDebugTags() + ENDL;
 			ActiveEventCount++;
+		}
+		else
+		{
+			InactiveContent += Event->ToStringWithDebugTags() + ENDL;
+			InactiveEventCount++;
 		}
 	}
 
-	FString DisplayInfo = TextTag_Header + FString::Printf(TEXT("Target Actor GameplayEvents: %d"), ActiveEventCount) + TextTag_End + ENDL;
+	FEventsDisplayInfo DisplayInfo;
 
-	DisplayInfo += Content;
+	FString ActiveTitle = TextTag_Header + FString::Printf(TEXT("Target Actor Active GameplayEvents: %d"), ActiveEventCount) + TextTag_End + ENDL;
+	DisplayInfo.ActiveEvents = ActiveTitle + ActiveContent;
+
+	FString InactiveTitle = TextTag_Header + FString::Printf(TEXT("Target Actor Inactive GameplayEvents: %d"), InactiveEventCount) + TextTag_End + ENDL;
+	DisplayInfo.InactiveEvents = InactiveTitle + InactiveContent;
 
 	return DisplayInfo;
 }
@@ -370,15 +412,7 @@ void UGameplaySystemDebugWidget::BindToGameplaySystem(UGameplaySystemComponent* 
 
 void UGameplaySystemDebugWidget::BindToGameplayEventSubsystem()
 {
-	UGameInstance* GameInstance = UGameplayStatics::GetGameInstance(this);
-
-	if (!GameInstance)
-	{
-		GS_LOG(Warning, TEXT("No GameplayEventSubsystem found when binding!"));
-		return;
-	}
-
-	UGameplayEventSubsystem* EventSubsystem = GameInstance->GetSubsystem<UGameplayEventSubsystem>();
+	UGameplayEventSubsystem* EventSubsystem = UGameplayEventSubsystem::Get(this);
 	ensure(EventSubsystem); // Should not be invalid during gameplay.
 
 	BoundEventSubsystem = MakeWeakObjectPtr(EventSubsystem);

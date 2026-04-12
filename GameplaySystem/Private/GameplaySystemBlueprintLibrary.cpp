@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplaySystemBlueprintLibrary.h"
@@ -21,7 +21,8 @@ float UGameplaySystemBlueprintLibrary::GetGameplayAbilityCooldown(const FActiveG
 
 float UGameplaySystemBlueprintLibrary::GetGameplayAbilityDuration(const FActiveGameplayAbility& ActiveGameplayAbility)
 {
-	return ActiveGameplayAbility.GetRemainingDuration();
+	// TODO: Fix
+	return 1.0f;
 }
 
 UGameplayAbility* UGameplaySystemBlueprintLibrary::GetGameplayAbilityInstance(const FActiveGameplayAbility& ActiveGameplayAbility)

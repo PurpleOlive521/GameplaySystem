@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -53,18 +53,29 @@ public:
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	ETargetValue Target = ETargetValue::ETV_BaseValue;
 	
-	// Applies the effect to the Attribute.
-	bool ApplyAttributeEffect(FAttribute& AffectedAttribute);
+	// Applies the effect to the Attribute. 
+	bool ApplyAttributeEffect(FAttribute& AffectedAttribute, bool bResetBonusValue);
 
 	// Removes the effect to the Attribute, reverting the effects this applied on application.
 	bool RemoveAttributeEffect(FAttribute& AffectedAttribute);
 
-	bool operator==(const FAttributeEffect& Other) const 
+	// Returns true if the other AttributeEffect is identical except in the Attribute it affects.
+	bool IsSameModifier(const FAttributeEffect& Other) const
 	{
-		return Attribute == Other.Attribute &&
+		return
 			Value == Other.Value &&
 			ApplicationType == Other.ApplicationType &&
 			Target == Other.Target;
+	}
+
+	// Compares if Other is an effectively a copy of this AttributeEffect.
+	bool operator==(const FAttributeEffect& Other) const 
+	{
+		return 
+			Attribute		== Other.Attribute &&
+			Value			== Other.Value &&
+			ApplicationType == Other.ApplicationType &&
+			Target			== Other.Target;
 	}
 
 	// Formats the AttributeEffect as 'AttributeType: Value (ApplicationType)BonusValue | TargetValue'

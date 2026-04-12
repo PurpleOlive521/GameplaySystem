@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplayEvent.h"
@@ -6,6 +6,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "DevelopmentTypes.h"
 #include "GameplayEventBlueprintLibrary.h"
+#include "GameplaySystemGlobals.h"
+#include "GameplayEventTask.h"
 
 using namespace DebugTypes;
 
@@ -37,6 +39,55 @@ UWorld* UGameplayEvent::GetWorld() const
 void UGameplayEvent::FinishDestroy()
 {
 	Super::FinishDestroy();
+}
+
+UGameplayTasksComponent* UGameplayEvent::GetGameplayTasksComponent(const UGameplayTask& Task) const
+{
+	if (UGlobalGameplaySubsystem* Subsystem = UGlobalGameplaySubsystem::Get(this))
+	{
+		return Subsystem->GetGlobalGameplaySystemComponent();
+	}
+
+	GE_LOG(Error, TEXT("GameplayEvent: Could not get global GameplaySystem!"));
+
+	return nullptr;
+}
+
+AActor* UGameplayEvent::GetGameplayTaskOwner(const UGameplayTask* Task) const
+{
+	return OwningActor.Get();
+}
+
+AActor* UGameplayEvent::GetGameplayTaskAvatar(const UGameplayTask* Task) const
+{
+	return OwningActor.Get();
+}
+
+void UGameplayEvent::OnGameplayTaskInitialized(UGameplayTask& Task)
+{
+	UGameplayEventTask* EventTask = Cast<UGameplayEventTask>(&Task);
+
+	// GameplayTasks are not allowed for Static Events. Static Events must trigger instantly without latent logic.
+	check(InstancingPolicy != EEventInstancingPolicy::EEIP_Static); 
+
+	if (EventTask)
+	{
+		EventTask->SetGameplayEvent(this);
+	}
+}
+
+void UGameplayEvent::OnGameplayTaskActivated(UGameplayTask& Task)
+{
+	GE_LOG(Log, TEXT("GameplayEvent Task Started: %s"), *Task.GetName());
+
+	ActiveTasks.Add(&Task);
+}
+
+void UGameplayEvent::OnGameplayTaskDeactivated(UGameplayTask& Task)
+{
+	GE_LOG(Log, TEXT("GameplayEvent Task Ended: %s"), *Task.GetName());
+
+	ActiveTasks.Remove(&Task);
 }
 
 void UGameplayEvent::Init(UObject* InOwningObject)
@@ -110,13 +161,13 @@ bool UGameplayEvent::TryTriggerGameplayEvent(const FGameplayEventActivationData&
 	return true;
 }
 
-void UGameplayEvent::StaticTryTriggerGameplayEvent(UWorld* World, const FGameplayEventActivationData& ActivationData) const
+void UGameplayEvent::StaticTryTriggerGameplayEvent(const UObject* WorldContextObject, const FGameplayEventActivationData& ActivationData) const
 {
-	ensure(World);
+	ensure(WorldContextObject);
 
 	GE_LOG(Log, TEXT("Event: %s triggered. Mode: Static"), *DisplayName);
 
-	const bool bPassedPreTrigger = StaticPreTriggerEvent();
+	const bool bPassedPreTrigger = StaticPreTriggerEvent(WorldContextObject);
 	if (!bPassedPreTrigger)
 	{
 		GE_LOG(Log, TEXT("StaticPretrigger for event '%s' failed."), *DisplayName);
@@ -124,9 +175,9 @@ void UGameplayEvent::StaticTryTriggerGameplayEvent(UWorld* World, const FGamepla
 		return;
 	}
 
-	StaticTriggerEvent(World, ActivationData);
+	StaticTriggerEvent(WorldContextObject, ActivationData);
 
-	K2_StaticTriggerEvent(World, ActivationData);
+	K2_StaticTriggerEvent(WorldContextObject, ActivationData);
 }
 
 bool UGameplayEvent::TryEndGameplayEvent()
@@ -142,7 +193,9 @@ bool UGameplayEvent::TryEndGameplayEvent()
 
 	K2_EndEvent();
 
-	MarkForCleanup();
+	StopEvent();
+
+	OnEventEndedDelegate.Broadcast(this);
 
 	return true;
 }
@@ -164,7 +217,9 @@ bool UGameplayEvent::TryAbortEvent()
 
 	bIsAborting = false;
 
-	MarkForCleanup();
+	StopEvent();
+
+	OnEventAbortedDelegate.Broadcast();
 
 	return true;
 }
@@ -204,18 +259,46 @@ AActor* UGameplayEvent::GetOwnerAsActor_Checked() const
 
 UGameplayEventSubsystem* UGameplayEvent::GetEventSubsystem() const
 {
-	UGameInstance* GameInstance = UGameplayStatics::GetGameInstance(this);
+	return GetEventSubsystem(this);
+}
 
-	if (!GameInstance)
+UGameplayEventSubsystem* UGameplayEvent::GetEventSubsystem(const UObject* WorldContextObject) const
+{
+	if (WorldContextObject)
 	{
-		GE_LOG(Error, TEXT("Event could not access GameInstance! Was it called outside of the valid game scope?"));
-		return nullptr;
+		return UGameplayEventSubsystem::Get(WorldContextObject);
 	}
 
-	UGameplayEventSubsystem* EventSubsystem = GameInstance->GetSubsystem<UGameplayEventSubsystem>();
-	ensure(EventSubsystem); // Should not be invalid during the expected GameplayEvent lifetime. Are we operating invalidly?
+	return nullptr;
+}
 
-	return EventSubsystem;
+FGameplayEventHandle UGameplayEvent::GetEventHandle() const
+{
+	return GetEventSubsystem()->GetHandleForEvent(this);
+}
+
+float UGameplayEvent::GetDeltaTimeCoefficient() const
+{
+	const float GlobalTimeDilation = GetWorld()->GetWorldSettings()->GetEffectiveTimeDilation();
+	const float AbsoluteDeltaTime = 1.0f / GlobalTimeDilation;
+
+	switch (TickSource)
+	{
+	case ETickSource::ETS_GlobalDeltaTime:
+		return GlobalTimeDilation;
+
+	case ETickSource::ETS_AbsoluteDeltaTime:
+		return AbsoluteDeltaTime;
+
+	case ETickSource::ETS_SourceDeltaTime:
+		if (AActor* Owner = GetOwnerAsActor())
+		{
+			return Owner->CustomTimeDilation;
+		}
+		break;
+	}
+
+	return 1.0f;
 }
 
 bool UGameplayEvent::ShouldCleanup() const
@@ -324,6 +407,11 @@ FString UGameplayEvent::ToString() const
 		DisplayInfo += TEXT(" Owner: ") + Owner->GetClass()->GetName();
 	}
 
+	for (const auto& GameplayTask : ActiveTasks)
+	{
+		DisplayInfo += GameplayTask->GetDebugString() + ENDL;
+	}
+
 	return DisplayInfo;
 }
 
@@ -335,7 +423,12 @@ FString UGameplayEvent::ToStringWithDebugTags() const
 
 	if (UObject* Owner = GetOwningObject())
 	{
-		DisplayInfo += TEXT(" Owner: ") + TextTag_Highlight + Owner->GetClass()->GetName() + TextTag_End;
+		DisplayInfo += TEXT(" Owner: ") + TextTag_Highlight + Owner->GetClass()->GetName() + TextTag_End + ENDL;
+	}
+
+	for (const auto& GameplayTask : ActiveTasks)
+	{
+		DisplayInfo += GameplayTask->GetDebugString() + ENDL;
 	}
 
 	return DisplayInfo;
@@ -417,9 +510,9 @@ bool UGameplayEvent::PreTriggerEvent()
 	return true;
 }
 
-bool UGameplayEvent::StaticPreTriggerEvent() const
+bool UGameplayEvent::StaticPreTriggerEvent(const UObject* WorldContextObject) const
 {
-	UGameplayEventSubsystem* EventSubsystem = GetEventSubsystem();
+	UGameplayEventSubsystem* EventSubsystem = GetEventSubsystem(WorldContextObject);
 
 	// --- Enforce End Queries
 
@@ -453,10 +546,10 @@ void UGameplayEvent::TriggerEvent(const FGameplayEventActivationData& Activation
 	// Write your custom native trigger logic here.
 }
 
-void UGameplayEvent::StaticTriggerEvent(UWorld* World, const FGameplayEventActivationData& ActivationData) const
+void UGameplayEvent::StaticTriggerEvent(const UObject* WorldContextObject, const FGameplayEventActivationData& ActivationData) const
 {
 	// Write your custom native trigger logic here.
-	// Only required when EventInstancingPolicy is set to Static.
+	// Only used when EventInstancingPolicy is set to Static.
 }
 
 void UGameplayEvent::EndEvent()
@@ -491,7 +584,15 @@ void UGameplayEvent::FinishAbortWithEndEvent()
 		return;
 	}
 	
-	TryEndGameplayEvent();
+	if (bHasEnded)
+	{
+		GE_LOG(Warning, TEXT("FinishAbortWithEndEvent called when already ended!"));
+		return;
+	}
+
+	EndEvent();
+
+	K2_EndEvent();
 }
 
 void UGameplayEvent::ForceTerminate()
@@ -503,7 +604,6 @@ void UGameplayEvent::ForceTerminate()
 
 		TryAbortEvent();
 		
-		MarkForCleanup();
 		// We want to get GC'ed ASAP, since we might have created objects in Blueprints that we want removed.
 		GetEventSubsystem()->RequestCleanup();
 	}
@@ -515,10 +615,26 @@ void UGameplayEvent::StaticForceTerminate() const
 	GE_LOG(Error, TEXT("Static Event forced to terminate to avoid raising errors in non-crucial GameplayEvent: '%s' by '%s'."), *DisplayName, *OwnerName);
 }
 
-void UGameplayEvent::MarkForCleanup()
+bool UGameplayEvent::HasBeenAborted() const
+{
+	return bHasAborted || bIsAborting;
+}
+
+void UGameplayEvent::StopEvent()
 {
 	TickFollowers.Clear();
 	bMarkedForCleanup = true;
+
+	// Tell all our tasks that we are finished and they should cleanup
+	for (int32 TaskIndex = ActiveTasks.Num() - 1; TaskIndex >= 0 && ActiveTasks.Num() > 0; --TaskIndex)
+	{
+		UGameplayTask* Task = ActiveTasks[TaskIndex];
+		if (Task)
+		{
+			Task->TaskOwnerEnded();
+		}
+	}
+	ActiveTasks.Reset();
 }
 
 void UGameplayEvent::CleanProperties()

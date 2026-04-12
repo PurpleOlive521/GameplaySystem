@@ -1,9 +1,9 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Subsystems/GameInstanceSubsystem.h"
+#include "Subsystems/WorldSubsystem.h"
 #include "GameplayEventHandle.h"
 #include "GameplayEventTypes.h"
 #include "GameplayTagTypes.h"
@@ -41,7 +41,7 @@ struct GAMEPLAYSYSTEM_API FQueuedEvent
 };
 
 UCLASS()
-class GAMEPLAYSYSTEM_API UGameplayEventSubsystem : public UGameInstanceSubsystem, public FTickableGameObject
+class GAMEPLAYSYSTEM_API UGameplayEventSubsystem : public UTickableWorldSubsystem
 {
 	GENERATED_BODY()
 	
@@ -53,7 +53,6 @@ public:
 	// --- Begin USubsystem Interface
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
-	virtual bool ShouldCreateSubsystem(UObject* Outer) const override;
 	// --- End USubsystem Interface
 
 	// --- Begin FTickableObject Interface
@@ -64,6 +63,9 @@ public:
 	virtual UWorld* GetTickableGameObjectWorld() const override;
 	virtual bool IsTickableWhenPaused() const override;
 	// --- End FTickableObject Interface
+
+	// Helper getter
+	static UGameplayEventSubsystem* Get(const UObject* WorldContext);
 
 	// The entrypoint for creating and activating any GameplayEvent. 
 	// Returns a valid GameplayEventHandle if activated successfully.
@@ -105,6 +107,15 @@ public:
 
 	void RequestCleanup();
 
+	UFUNCTION(BlueprintCallable, Category = "GameplayEventSubsystem")
+	void SetBlockAllEvents(bool InState);
+
+	UFUNCTION(BlueprintCallable, Category = "GameplayEventSubsystem")
+	bool GetBlockAllEvents() const;
+
+	UFUNCTION(BlueprintCallable, Category = "GameplayEventSubsystem")
+	FGameplayEventHandle GetHandleForEvent(const UGameplayEvent* Event) const;
+
 protected:
 
 	// If valid, OptionalHandle will be used for the GameplayEvent if triggered successfully.
@@ -118,8 +129,6 @@ protected:
 
 	void GetEventsByPredicate(std::function<bool(const UGameplayEvent*)> Predicate, TWeakObjectPtr<AActor> Target, const UGameplayEvent* Ignore, TArray<FGameplayEventHandle>& OutEvents);
 
-	void HandlePreLoadMap(const FWorldContext& WorldContext, const FString& MapName);
-
 	void HandlePreGarbageCollect();
 
 	void ProcessQueuedEvents();
@@ -129,12 +138,15 @@ protected:
 
 	inline bool IsLockActive() const;
 
-	UPROPERTY(BlueprintReadOnly, Category = "GameplayEventSubsystem")
+	UPROPERTY()
 	TMap<FGameplayEventHandle, TObjectPtr<UGameplayEvent>> EventMap;
 
+	// TODO: Rewrite to not use a WeakObjectPtr as key
 	TMap<TWeakObjectPtr<AActor>, FActorGameplayEventContainer> PerActorEventMap;
 
 	FGameplayTagSystem GloballyBlockedEventTags;
+
+	uint32 bBlockAllEvents = false;
 
 	uint32 bHasQueuedCleanup : 1 = false;
 

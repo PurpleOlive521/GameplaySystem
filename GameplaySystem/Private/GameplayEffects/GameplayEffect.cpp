@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplayEffect.h"
@@ -8,76 +8,9 @@
 
 #include "DevelopmentTypes.h"
 
-const float FGameplayEffectConstants::INFINITE_DURATION = 0.0f;
-const float FGameplayEffectConstants::NO_PERIOD = 0.0f;
-
-void UGameplayEffectExecutor::OnGameplayEffectApplied(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToApply, const FGameplayTagModifierContainer& TagModifiers) const
-{
-	PerformDefaultApply(Params, EffectsToApply, TagModifiers);
-}
-
-void UGameplayEffectExecutor::OnGameplayEffectRemoved(FGameplayEffectExecutorParams Params) const
-{
-	PerformDefaultRemove(Params);
-}
-
-void UGameplayEffectExecutor::OnGameplayEffectReapplied(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToReapply) const
-{
-	PerformDefaultReapply(Params, EffectsToReapply);
-}
-
-void UGameplayEffectExecutor::PerformDefaultApply(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToApply, const FGameplayTagModifierContainer& TagModifiers) const
-{
-	Apply_Internal(Params, EffectsToApply, TagModifiers);
-}
-
-void UGameplayEffectExecutor::PerformDefaultRemove(FGameplayEffectExecutorParams Params) const
-{
-	FActiveGameplayEffect* ActiveGameplayEffect = Params.ActiveGameplayEffect;
-	UGameplaySystemComponent* GameplaySystem = Params.GameplaySystem;
-
-	ActiveGameplayEffect->RemoveAppliedModifiers(GameplaySystem, GameplaySystem->GetOwner());
-}
-
-void UGameplayEffectExecutor::PerformDefaultReapply(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToReapply) const
-{
-	const UGameplayEffect* Effect = Params.GameplayEffect;
-	UGameplaySystemComponent* GameplaySystem = Params.GameplaySystem;
-
-	for (const FAttributeEffect& AttributeEffect : EffectsToReapply)
-	{
-		// Force non-reversible application since we can't track and undo our reapplications anyway
-		GameplaySystem->ApplyAttributeEffect(AttributeEffect, EDurationType::EDT_Instant);
-	}
-}
-
-inline static void Predicate_Apply(const FAttributeEffect& AttributeEffect, EDurationType DurationType, UGameplaySystemComponent* GameplaySystem)
-{
-	GameplaySystem->ApplyAttributeEffect(AttributeEffect, DurationType);
-};
-
-void UGameplayEffectExecutor::Apply_Internal(FGameplayEffectExecutorParams Params, const TArray<FAttributeEffect>& EffectsToApply, const FGameplayTagModifierContainer& TagModifiers) const
-{
-	const UGameplayEffect* Effect = Params.GameplayEffect;
-	UGameplaySystemComponent* GameplaySystem = Params.GameplaySystem;
-
-	const bool bApplyEffectNow = Effect->PeriodType == EPeriodApplicationType::EPAT_ExecuteOnApplication;
-	if (bApplyEffectNow)
-	{
-		for (const FAttributeEffect& AttributeEffect : EffectsToApply)
-		{
-			GameplaySystem->ApplyAttributeEffect(AttributeEffect, Effect->DurationType);
-		}
-
-		Effect->TagModifierContainer.Apply(GameplaySystem->GetGameplayTagSystem());
-	}
-}
-
 UGameplayEffect::UGameplayEffect()
 {
 	GENERATE_IF_INVALID(Id);
-
-	FillEmptyClasses();
 }
 
 #if WITH_EDITOR
@@ -86,8 +19,6 @@ void UGameplayEffect::PostEditChangeProperty(struct FPropertyChangedEvent& Prope
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 	
 	GENERATE_IF_INVALID(Id);
-
-	FillEmptyClasses();
 }
 #endif
 
@@ -118,8 +49,9 @@ bool UGameplayEffect::ApplyGameplayEffect(UGameplaySystemComponent* GameplaySyst
 		return false;
 	}
 	
-	const bool bPassedCustomRequirements = GetActivationRequirementsClass()->CanApply(this, GameplaySystem);
-	if (!bPassedCustomRequirements)
+	FGameplayEffectConditionParams ConditionParams = { this, GameplaySystem };
+	const bool bPassedConditions = FireConditionPipeline(ConditionParams, EGameplayEffectStage::EGES_Apply);
+	if (!bPassedConditions)
 	{
 		return false;
 	}
@@ -144,6 +76,9 @@ bool UGameplayEffect::ApplyGameplayEffect(UGameplaySystemComponent* GameplaySyst
 		}
 	}
 
+	FGameplayEffectExecutorParams ExecutorParams = { this, &ActiveGameplayEffect, GameplaySystem };
+	FireExecutorPipeline(ExecutorParams, EGameplayEffectStage::EGES_Apply);
+
 	// We do not modify on application, so we only register and exit here 
 	if (PeriodType != EPeriodApplicationType::EPAT_ExecuteOnApplication)
 	{
@@ -153,10 +88,6 @@ bool UGameplayEffect::ApplyGameplayEffect(UGameplaySystemComponent* GameplaySyst
 		GameplaySystem->RegisterGameplayEffect(GeneratedHandle, ActiveGameplayEffect);
 		return true;
 	}
-
-	const UGameplayEffectExecutor* GameplayEffectExecutor = GetExecutorClass();
-	FGameplayEffectExecutorParams Params = { this, &ActiveGameplayEffect, GameplaySystem };
-	GameplayEffectExecutor->OnGameplayEffectApplied(Params, AttributeEffects, TagModifierContainer);
 
 	// Remove any matching GameplayEffects
 	TArray<FGameplayEffectHandle> HandlesToRemove;
@@ -178,41 +109,121 @@ bool UGameplayEffect::RemoveGameplayEffect(UGameplaySystemComponent* GameplaySys
 {
 	check(GameplaySystem);
 
-	const UGameplayEffectExecutor* GameplayEffectExecutor = GetExecutorClass();
 	FGameplayEffectExecutorParams Params = { this, &ActiveGameplayEffect, GameplaySystem };
-	GameplayEffectExecutor->OnGameplayEffectRemoved(Params);
+	FireExecutorPipeline(Params, EGameplayEffectStage::EGES_Remove);
 
 	return GameplaySystem->RemoveGameplayEffect_Internal(Handle);
 }
 
-const UGameplayEffectExecutor* UGameplayEffect::GetExecutorClass() const
+void UGameplayEffect::FireExecutorPipeline(const FGameplayEffectExecutorParams& Params, EGameplayEffectStage Stage) const
 {
-	check(ExecutorClass);
+	const FGameplaySystemSnapshot Snapshot = Params.GameplaySystem->GetSnapshot();
 
-	return ExecutorClass->GetDefaultObject<UGameplayEffectExecutor>();
-}
-
-const UGameplayEffectApplicationRequirements* UGameplayEffect::GetActivationRequirementsClass() const
-{
-	check(ActivationRequirementsClass);
-
-	return ActivationRequirementsClass->GetDefaultObject<UGameplayEffectApplicationRequirements>();
-}
-
-void UGameplayEffect::FillEmptyClasses()
-{
-	// Ensure we always have classes to operate on.
-	if (!ExecutorClass)
+	for (auto& Module : ExecutorModules)
 	{
-		ExecutorClass = UGameplayEffectExecutor::StaticClass();
-		check(ExecutorClass)
+		if (!Module)
+		{
+			GS_LOG(Warning, TEXT("Invalid Executor Module found in GameplayEffect: %s"), *Name);
+			continue;
+		}
+
+		switch (Stage)
+		{
+		case EGameplayEffectStage::EGES_Apply:
+			Module->PreApply(Params);
+			break;
+
+		case EGameplayEffectStage::EGES_Reapply:
+			Module->PreReapply(Params);
+			break;
+
+		case EGameplayEffectStage::EGES_Remove:
+			Module->PreRemove(Params);
+			break;
+		}
+
 	}
 
-	if (!ActivationRequirementsClass)
+	switch (Stage)
 	{
-		ActivationRequirementsClass = UGameplayEffectApplicationRequirements::StaticClass();
-		check(ActivationRequirementsClass)
+	case EGameplayEffectStage::EGES_Apply:
+		UGameplayEffectExecutor::Apply(Params);
+		break;
+
+	case EGameplayEffectStage::EGES_Reapply:
+		UGameplayEffectExecutor::Reapply(Params);
+		break;
+
+	case EGameplayEffectStage::EGES_Remove:
+		UGameplayEffectExecutor::Remove(Params);
+		break;
 	}
+
+	for (auto& Module : ExecutorModules)
+	{
+		if (!Module)
+		{
+			GS_LOG(Warning, TEXT("Invalid Executor Module found in GameplayEffect: %s"), *Name);
+			continue;
+		}
+
+		switch (Stage)
+		{
+		case EGameplayEffectStage::EGES_Apply:
+			Module->PostApply(Params, Snapshot);
+			break;
+
+		case EGameplayEffectStage::EGES_Reapply:
+			Module->PostReapply(Params, Snapshot);
+			break;
+
+		case EGameplayEffectStage::EGES_Remove:
+			Module->PostRemove(Params, Snapshot);
+			break;
+		}
+
+	}
+}
+
+bool UGameplayEffect::FireConditionPipeline(const FGameplayEffectConditionParams& Params, EGameplayEffectStage Stage) const
+{
+	for (auto& Module : ConditionModules)
+	{
+		if (!Module)
+		{
+			GS_LOG(Warning, TEXT("Invalid Condition Module found in GameplayEffect: %s"), *Name);
+			continue;
+		}
+
+		bool bResult = true;
+
+		switch (Stage)
+		{
+		case EGameplayEffectStage::EGES_Apply:
+			bResult = Module->CanApply(Params);
+			break;
+
+		case EGameplayEffectStage::EGES_Reapply:
+			bResult = Module->CanReapply(Params);
+			break;
+
+		case EGameplayEffectStage::EGES_Remove:
+			checkNoEntry(); // Not supported yet.
+			break;
+		}
+
+		if (!bResult)
+		{
+			return false;
+		}
+	}
+
+	return true;
+}
+
+bool UGameplayEffect::IsAppliedOnTick() const
+{
+	return PeriodLength != FGameplayEffectConstants::NO_PERIOD;
 }
 
 FActiveGameplayEffect::FActiveGameplayEffect()
@@ -250,9 +261,12 @@ void FActiveGameplayEffect::Tick(float DeltaTime, UGameplaySystemComponent* Game
 
 	while (IsPeriodPassed())
 	{
-		const UGameplayEffectExecutor* GameplayEffectExecutor = GameplayEffect->GetExecutorClass();
-		FGameplayEffectExecutorParams Params = { GameplayEffect, this, GameplaySystem };
-		GameplayEffectExecutor->OnGameplayEffectReapplied(Params, AttributeEffects);
+		FGameplayEffectConditionParams ConditionParams = { GameplayEffect, GameplaySystem };
+		if (GameplayEffect->FireConditionPipeline(ConditionParams, EGameplayEffectStage::EGES_Reapply))
+		{
+			FGameplayEffectExecutorParams ExecutorParams = { GameplayEffect, this, GameplaySystem };
+			GameplayEffect->FireExecutorPipeline(ExecutorParams, EGameplayEffectStage::EGES_Reapply);
+		}
 
 		// Compensate for missed applications because of large DeltaTime or small PeriodLength
 		if (TimeSinceLastApplication > GameplayEffect->PeriodLength)
@@ -279,14 +293,15 @@ void FActiveGameplayEffect::RemoveAppliedModifiers(UGameplaySystemComponent* Gam
 		}
 	}
 
-	// First, remove any applied Attribute Effects
-	for (FAttributeEffect& AttributeEffect : AttributeEffects)
+	if (GameplayEffect->bUndoModifiersOnRemoval)
 	{
-		GameplaySystem->RemoveAttributeEffect(AttributeEffect);
-	}
+		for (FAttributeEffect& AttributeEffect : AttributeEffects)
+		{
+			GameplaySystem->RemoveAttributeEffect(AttributeEffect);
+		}
 
-	// Remove the GameplayTag modifiers
-	GameplayEffect->TagModifierContainer.ReverseApply(GameplaySystem->GetGameplayTagSystem());
+		GameplayEffect->TagModifierContainer.ReverseApply(GameplaySystem->GetGameplayTagSystem());
+	}
 }
 
 volatile bool FActiveGameplayEffect::IsPeriodPassed() const

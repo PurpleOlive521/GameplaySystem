@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplayAbilitySlot.h"
@@ -94,7 +94,8 @@ float FGameplayAbilitySlot::GetCurrentDuration() const
 		return 0.0f;
 	}
 
-	return ActiveAbility->GetRemainingDuration();
+	// TODO: Fix.
+	return 1.0f;
 }
 
 float FGameplayAbilitySlot::GetCurrentDurationAsPercentage() const
@@ -107,7 +108,8 @@ float FGameplayAbilitySlot::GetCurrentDurationAsPercentage() const
 		return 0.0f;
 	}
 
-	return ActiveAbility->GetRemainingDurationAsPercentage();
+	// TODO: Fix.
+	return 1.0f;
 }
 
 UGameplaySystemComponent* FGameplayAbilitySlot::GetGameplaySystemComponent() const

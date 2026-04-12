@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -84,10 +84,11 @@ struct GAMEPLAYSYSTEM_API FGameplayTagSystem
 	// Formats the tag count for display as 'TagName (Count)' with color tags included for easier readability.
 	void ToStringArrayWithDebugTags(TArray<FString>& OutString) const;
 
-	UPROPERTY(BlueprintReadOnly, Category = "GameplayTagComponent")
+	UPROPERTY(BlueprintReadOnly, SaveGame, Category = "GameplayTagComponent")
 	FGameplayTagContainer GameplayTags;
 
 	// Keeps track of the amount of each tag thats currently applied, to safely track multiple sources of the same tag.
+	UPROPERTY(SaveGame)
 	TMap<FGameplayTag, int> TagCountTable;
 
 	// --- Delegates

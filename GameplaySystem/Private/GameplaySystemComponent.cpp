@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplaySystemComponent.h"
@@ -7,13 +7,17 @@
 #include "AttributeEffect.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameplaySaveGameTypes.h"
+#include "GameplaySystemOwnerInterface.h"
 #include "GameplayTagDefines.h"
 #include "DevelopmentTypes.h"
 #include "GameplaySystemDeveloperSettings.h"
 
-UGameplaySystemComponent::UGameplaySystemComponent()
+
+UGameplaySystemComponent::UGameplaySystemComponent(const FObjectInitializer& ObjectInitializer)
+	: Super(ObjectInitializer)
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = true;
 }
 
 void UGameplaySystemComponent::BeginPlay()
@@ -136,24 +140,50 @@ int UGameplaySystemComponent::GetTotalTagCount()
 	return GameplayTagSystem.GetTotalTagCount();
 }
 
+bool UGameplaySystemComponent::GetShouldTick() const
+{
+	return true;
+}
+
+bool UGameplaySystemComponent::OnSerialize(FSaveGameArchive& Archive, bool bIsLoading)
+{
+	Archive.SerializeField(TEXT("GameplaySystemComponent"), [&](FStructuredArchive::FSlot Slot)
+		{
+			SerializeScriptProperties(Slot);
+
+			// Any custom serialization would happen here. Will probably be required for ActiveGameplayEffects
+
+		});
+
+	// Assume that system state is changed
+	bIsDirty = true;
+	OnAttributeChangedDelegateCollection.BroadcastAll();
+
+	return true;
+}
+
 void UGameplaySystemComponent::EvaluateAttributes()
 {
-	// Assume that no Attribute has an Active Effect, and reset the CurrentValue
 	for (auto& [Type, Attribute] : Attributes)
 	{
 		Attribute.CurrentValue = Attribute.BaseValue;
 	}
 
+	TArray<FAttributeEffect*> AttributeEffects;
+	CollectModifiers(AttributeEffects);
+
+	CachedAttributeEffectCount = AttributeEffects.Num();
+
 	// Sort such that the Effects are in ascending order per EEffectApplicationType
-	ActiveAttributeEffects.Sort([](const FAttributeEffect& A, const FAttributeEffect& B)
+	AttributeEffects.Sort([](const FAttributeEffect& A, const FAttributeEffect& B)
 		{
 			return A.ApplicationType < B.ApplicationType;
 		});
 
 	// Apply each AttributeEffect to the corresponding Attribute
-	for (FAttributeEffect& Effect : ActiveAttributeEffects)
+	for (FAttributeEffect* Effect : AttributeEffects)
 	{
-		EAttributeType EffectAttribute = Effect.Attribute;
+		const EAttributeType EffectAttribute = Effect->Attribute;
 		FAttribute* AffectedAttribute = Attributes.Find(EffectAttribute);
 
 		if (!AffectedAttribute)
@@ -161,7 +191,7 @@ void UGameplaySystemComponent::EvaluateAttributes()
 			continue;
 		}
 		
-		Effect.ApplyAttributeEffect(*AffectedAttribute);
+		Effect->ApplyAttributeEffect(*AffectedAttribute, true /* bResetBonusValue */);
 	}
 
 	// Apply AttributeConfigs
@@ -202,13 +232,36 @@ void UGameplaySystemComponent::EvaluateAttributes()
 	bIsDirty = false;
 }
 
-FGameplaySystemSaveObject UGameplaySystemComponent::SaveToObject() const
+UGameplaySystemComponent* UGameplaySystemComponent::GetGameplaySystemFromActor(AActor* Actor)
+{
+	if (!Actor)
+	{
+		return nullptr;
+	}
+
+	UGameplaySystemComponent* Component = nullptr;
+
+	Component = IGameplaySystemOwnerInterface::Execute_GetGameplaySystemComponent(Actor);
+	if (Component)
+	{
+		return Component;
+	}
+
+	Component = Actor->FindComponentByClass<UGameplaySystemComponent>();
+	if (Component)
+	{
+		return Component;
+	}
+
+	return nullptr;
+}
+
+FGameplaySystemSaveObject UGameplaySystemComponent::Save() const
 {
 	FGameplaySystemSaveObject SaveData;
 	SaveData.ValidityKey.MakeValid();
 
 	GetAttributes(SaveData.Attributes);
-	GetActiveAttributeEffects(SaveData.ActiveEffects);
 	GetActiveGameplayEffects(SaveData.ActiveGameplayEffects);
 	SaveData.EntityLevel = GetEntityLevel();
 	SaveData.Experience = EntityExperience;
@@ -217,7 +270,7 @@ FGameplaySystemSaveObject UGameplaySystemComponent::SaveToObject() const
 	return SaveData;
 }
 
-void UGameplaySystemComponent::LoadFromObject(const FGameplaySystemSaveObject& GameplaySystemSaveObject)
+void UGameplaySystemComponent::Load(const FGameplaySystemSaveObject& GameplaySystemSaveObject)
 {
 	CHECK_VALIDITY_EARLY_RETURN(GameplaySystemSaveObject);
 
@@ -226,7 +279,6 @@ void UGameplaySystemComponent::LoadFromObject(const FGameplaySystemSaveObject& G
 	SetExperience(GameplaySystemSaveObject.Experience);
 
 	SetAttributes(GameplaySystemSaveObject.Attributes);
-	SetActiveAttributeEffects(GameplaySystemSaveObject.ActiveEffects);
 
 	SetActiveGameplayEffects(GameplaySystemSaveObject.ActiveGameplayEffects);
 	GameplayTagSystem.LoadFromData(GameplaySystemSaveObject.GameplayTags);
@@ -236,7 +288,6 @@ void UGameplaySystemComponent::InitializeAttributes()
 {
 	if (AttributeDataSet == nullptr)
 	{
-		GS_LOG(Error, TEXT("AttributeComponent: Error - Initialized with null dataset"));
 		return;
 	}
 
@@ -262,8 +313,6 @@ void UGameplaySystemComponent::InitializeGameplayTags()
 
 void UGameplaySystemComponent::InitializeGameplaySystemActorInfo()
 {
-
-
 	GameplaySystemActorInfo = MakeShared<FGameplaySystemActorInfo>();
 	GameplaySystemActorInfo->Init(GetOwner(), this);
 }
@@ -392,11 +441,11 @@ bool UGameplaySystemComponent::HasAttributeType(EAttributeType AttributeType)
 	return Attributes.Contains(AttributeType);
 }
 
-void UGameplaySystemComponent::ApplyAttributeEffect(FAttributeEffect EffectToApply, EDurationType Type)
+void UGameplaySystemComponent::ApplyAttributeEffect(FAttributeEffect& EffectToApply, EDurationType Type)
 {
 	if (Type == EDurationType::EDT_Instant)
 	{
-		ApplyAttributeEffect_Internal_NoRemoval(EffectToApply);
+		ApplyAttributeEffect_Internal_Instant(EffectToApply);
 	}
 	else
 	{
@@ -406,14 +455,6 @@ void UGameplaySystemComponent::ApplyAttributeEffect(FAttributeEffect EffectToApp
 
 void UGameplaySystemComponent::RemoveAttributeEffect(FAttributeEffect& EffectToRemove)
 {
-	int Index = ActiveAttributeEffects.Find(EffectToRemove);
-
-	//Nothing to remove
-	if (Index == INDEX_NONE)
-	{
-		return;
-	}
-
 	FAttribute* AffectedAttribute = Attributes.Find(EffectToRemove.Attribute);
 
 	// Correctly remove the Effect by reversing its change to the Attribute
@@ -421,9 +462,6 @@ void UGameplaySystemComponent::RemoveAttributeEffect(FAttributeEffect& EffectToR
 	{
 		EffectToRemove.RemoveAttributeEffect(*AffectedAttribute);
 	}
-
-	ActiveAttributeEffects.RemoveAt(Index);
-
 
 	// If the affected Attribute exists, prompt a recalculation
 	if (HasAttributeType(EffectToRemove.Attribute))
@@ -434,9 +472,9 @@ void UGameplaySystemComponent::RemoveAttributeEffect(FAttributeEffect& EffectToR
 	}
 }
 
-int UGameplaySystemComponent::GetActiveEffectsCount()
+int UGameplaySystemComponent::GetActiveEffectsCount() const
 {
-	return ActiveAttributeEffects.Num();
+	return (int)CachedAttributeEffectCount;
 }
 
 void UGameplaySystemComponent::SetAttributeDataSet(UAttributeDataSet* InAttributeDataSet)
@@ -455,17 +493,6 @@ void UGameplaySystemComponent::SetAttributes(const TMap<EAttributeType, FAttribu
 	bIsDirty = true;
 }
 
-void UGameplaySystemComponent::GetActiveAttributeEffects(TArray<FAttributeEffect>& ActiveEffectsOut) const
-{
-	ActiveEffectsOut = ActiveAttributeEffects;
-}
-
-void UGameplaySystemComponent::SetActiveAttributeEffects(const TArray<FAttributeEffect>& AttributeEffectsIn)
-{
-	ActiveAttributeEffects = AttributeEffectsIn;
-	bIsDirty = true;
-}
-
 TMap<EAttributeType, FAttribute>::TConstIterator UGameplaySystemComponent::GetConstAttributeIterator() const
 {
 	return TMap<EAttributeType, FAttribute>::TConstIterator(Attributes);
@@ -479,20 +506,17 @@ void UGameplaySystemComponent::AddAttribute(FAttribute Attribute)
 	OnAttributeChangedDelegateCollection.Broadcast(Attribute.AttributeType);
 }
 
-void UGameplaySystemComponent::SimulateAttributes(const TArray<FAttributeEffect>& AttributeEffectsToSimulate, TMap<EAttributeType, FAttribute>& GeneratedAttributesOut)
+void UGameplaySystemComponent::SimulateAttributes(TArray<FAttributeEffect>& AttributeEffectsToSimulate, TMap<EAttributeType, FAttribute>& GeneratedAttributesOut)
 {
-	// We dont want other systems to try and react to these changes
-
-	OnAttributeChangedDelegateCollection.bIsSilenced = true;
+	FDelegateCollection::FBroadcastLock Lock = OnAttributeChangedDelegateCollection.CreateBroadcastLock();
 
 	TMap<EAttributeType, FAttribute> OriginalAttributes;
 	TArray<FAttributeEffect> OriginalActiveEffects;
 
 	GetAttributes(OriginalAttributes);
-	GetActiveAttributeEffects(OriginalActiveEffects);
 
 	// Apply the AttributeEffectsToSimulate
-	for (const FAttributeEffect& Effect : AttributeEffectsToSimulate)
+	for (FAttributeEffect& Effect : AttributeEffectsToSimulate)
 	{
 		ApplyAttributeEffect(Effect, EDurationType::EDT_Infinite);
 	}
@@ -511,9 +535,6 @@ void UGameplaySystemComponent::SimulateAttributes(const TArray<FAttributeEffect>
 
 	// Restore state
 	SetAttributes(OriginalAttributes);
-	SetActiveAttributeEffects(OriginalActiveEffects);
-
-	OnAttributeChangedDelegateCollection.bIsSilenced = false;
 }
 
 float UGameplaySystemComponent::CalculateCoefficientAttribute(const FCoefficientAttribute& CoefficientAttr)
@@ -547,7 +568,6 @@ void UGameplaySystemComponent::SetEntityLevel(const int& NewLevel, bool bDoSilen
 {
 	if (!LevelScalingCurveTable)
 	{
-		GS_LOG(Error, TEXT("GameplaySystemComponent: No assigned CurveTable for leveling!")); 
 		return;
 	}
 
@@ -777,11 +797,8 @@ bool UGameplaySystemComponent::RemoveGameplayEffect_Internal(const FGameplayEffe
 	return ActiveGameplayEffects.Remove(EffectToRemove) > 0;
 }
 
-void UGameplaySystemComponent::ApplyAttributeEffect_Internal(FAttributeEffect EffectToApply)
+void UGameplaySystemComponent::ApplyAttributeEffect_Internal(const FAttributeEffect& EffectToApply)
 {
-	ActiveAttributeEffects.Add(EffectToApply);
-
-	//If it has the affected Attribute, prompt a recalculation
 	if (HasAttributeType(EffectToApply.Attribute))
 	{
 		bIsDirty = true;
@@ -790,7 +807,7 @@ void UGameplaySystemComponent::ApplyAttributeEffect_Internal(FAttributeEffect Ef
 	}
 }
 
-void UGameplaySystemComponent::ApplyAttributeEffect_Internal_NoRemoval(FAttributeEffect EffectToApply)
+void UGameplaySystemComponent::ApplyAttributeEffect_Internal_Instant(FAttributeEffect EffectToApply)
 {
 	FAttribute* AffectedAttribute = Attributes.Find(EffectToApply.Attribute);
 
@@ -800,7 +817,7 @@ void UGameplaySystemComponent::ApplyAttributeEffect_Internal_NoRemoval(FAttribut
 		return;
 	}
 
-	EffectToApply.ApplyAttributeEffect(*AffectedAttribute);
+	EffectToApply.ApplyAttributeEffect(*AffectedAttribute, false /* bResetBonusValue */);
 	bIsDirty = true;
 
 	OnAttributeChangedDelegateCollection.Broadcast(EffectToApply.Attribute);
@@ -990,7 +1007,7 @@ FGameplayTagSystem* UGameplaySystemComponent::GetGameplayTagSystem()
 	return &GameplayTagSystem;
 }
  
-FGameplayAbilityHandle UGameplaySystemComponent::GetAbilityHandleFromInstance(UGameplayAbility* Instance)
+FGameplayAbilityHandle UGameplaySystemComponent::GetAbilityHandleFromInstance(const UGameplayAbility* Instance) const
 {
 	if (!Instance)
 	{
@@ -1074,7 +1091,12 @@ void UGameplaySystemComponent::GetAbilitiesByClass(TSubclassOf<UGameplayAbility>
 
 void UGameplaySystemComponent::GetActiveAbilitiesByClass(TSubclassOf<UGameplayAbility> Class, TArray<FGameplayAbilityHandle>& OutHandles, UGameplayAbility* Ignore) const
 {
-	checkNoEntry(); // Not implemented yet
+	auto IsOfClass = [Class](const FActiveGameplayAbility* Ability)
+		{
+			return Ability->Ability->IsA(Class);
+		};
+
+	GetActiveAbilitiesByPredicate(IsOfClass, OutHandles, Ignore);
 }
 
 void UGameplaySystemComponent::GetAbilitiesByPredicate(std::function<bool(const UGameplayAbility*)> Predicate, TArray<FGameplayAbilityHandle>& OutHandles, UGameplayAbility* Ignore) const
@@ -1202,7 +1224,26 @@ void UGameplaySystemComponent::EndAbility(const FGameplayAbilityHandle& Handle)
 		ClearAnimMontageInfo();
 	}
 
-	OnAbilityEndedDelegate.Broadcast(Handle);
+	OnAnyAbilityEndedDelegate.Broadcast(Handle);
+}
+
+void UGameplaySystemComponent::CollectModifiers(TArray<FAttributeEffect*>& AttributeEffects)
+{
+	AttributeEffects.Empty();
+
+	for (auto& [Handle, GameplayEffect] : ActiveGameplayEffects)
+	{
+		// Applies its effects on its own and should not be part of the recalculation.
+		if (GameplayEffect.GetDefinition()->IsAppliedOnTick())
+		{
+			return;
+		}
+
+		for (auto& AttributeEffect : GameplayEffect.AttributeEffects)
+		{
+			AttributeEffects.Emplace(&AttributeEffect);
+		}
+	}
 }
 
 void UGameplaySystemComponent::AddAbilityInstance(TSubclassOf<UGameplayAbility> AbilityClass)
@@ -1246,7 +1287,7 @@ void UGameplaySystemComponent::InformAbilityEnded(UGameplayAbility* AbilityInsta
 		ClearAnimMontageInfo();
 	}
 
-	OnAbilityEndedDelegate.Broadcast(Handle);
+	OnAnyAbilityEndedDelegate.Broadcast(Handle);
 }
 
 FGameplaySystemActorInfo* UGameplaySystemComponent::GetActorInfo() const
@@ -1271,7 +1312,7 @@ float UGameplaySystemComponent::PlayMontage(UGameplayAbility* PlayingAbility, UA
 	// Stop the AnimMontage before updating AnimMontageInfo to catch any last AnimNotifies or AnimNotifyStates
 	if (AnimMontageInfo.CurrentMontage)
 	{
-		AnimInstance->Montage_Stop(0.0f, AnimMontageInfo.CurrentMontage);
+		StopCurrentMontage();
 	}
 
 	// Assign before playing in case that there is a frame-1 AnimNotify or AnimNotifyState on MontageToPlay that requires the AnimMontageInfo
@@ -1314,6 +1355,33 @@ FGameplaySystemAnimMontageInfo* UGameplaySystemComponent::GetAnimMontageInfo()
 	return &AnimMontageInfo;
 }
 
+UAnimMontage* UGameplaySystemComponent::GetCurrentAnimMontage() const
+{
+	return AnimMontageInfo.CurrentMontage;
+}
+
+void UGameplaySystemComponent::StopCurrentMontage(float OverrideBlendOutTime)
+{
+	UAnimMontage* Montage = AnimMontageInfo.CurrentMontage;
+	if (!Montage)
+	{
+		return;
+	}
+
+	if (UAnimInstance* AnimInstance = GetActorInfo()->GetAnimInstance())
+	{
+		const bool bShouldStop = !AnimInstance->Montage_GetIsStopped(Montage);
+		if (bShouldStop)
+		{
+			const float BlendOutTime = (OverrideBlendOutTime >= 0.0f ? OverrideBlendOutTime : Montage->BlendOut.GetBlendTime());
+
+			AnimInstance->Montage_Stop(BlendOutTime, Montage);
+
+			AnimMontageInfo.CurrentMontage = nullptr;
+		}
+	}
+}
+
 void UGameplaySystemComponent::DestroyActiveState()
 {
 	// Abilities might depend on the owning actor
@@ -1334,6 +1402,11 @@ void UGameplaySystemComponent::DestroyActiveState()
 	AbilityInstanceMap.Empty();
 
 	ActiveGameplayEffects.Empty();
+}
+
+FGameplaySystemSnapshot UGameplaySystemComponent::GetSnapshot()
+{
+	return FGameplaySystemSnapshot(this);
 }
 
 UGameplayAbility* UGameplaySystemComponent::GetOrCreateAbilityInstance(TSubclassOf<UGameplayAbility> AbilityClass, bool& OutbCreatedNew)
@@ -1690,6 +1763,14 @@ inline void FDelegateCollection::BroadcastMultiple(const TArray<EAttributeType>&
 	for (EAttributeType Type : Attributes)
 	{
 		Broadcast(Type);
+	}
+}
+
+inline void FDelegateCollection::BroadcastAll()
+{
+	for (auto& [AttributeType, Delegate] : DelegateMap)
+	{
+		Broadcast(AttributeType);
 	}
 }
 

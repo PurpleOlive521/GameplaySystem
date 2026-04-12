@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -41,8 +41,18 @@ public:
 	static bool IsEventActive(const FGameplayEventHandle& Handle, UObject* WorldObject);
 
 	// Converts the TickSource type to a display friendly string. Works in shipping builds!
-	UFUNCTION(BlueprintPure, BlueprintCallable, Category = "GameplaySystem|Attributes")
+	UFUNCTION(BlueprintPure, BlueprintCallable, Category = "GameplayEvent")
 	static FString ConvertTickSourceToDisplayName(ETickSource TickSourceType);
+
+	// --- Helpers
+
+	// Same as UGameplayStatic::GetPlayerController but with exposed WorldContextObject.
+	UFUNCTION(BlueprintPure, Category = "GameplayEvent|Helpers")
+	static APlayerController* GetPlayerControllerForEvent(const UObject* WorldContextObject, int32 PlayerIndex);
+
+	// Same as UGameplayStatic::GetGameInstance but with exposed WorldContextObject.
+	UFUNCTION(BlueprintPure, Category = "GameplayEvent|Helpers")
+	static UGameInstance* GetGameInstanceForEvent(const UObject* WorldContextObject);
 
 private: 
 	

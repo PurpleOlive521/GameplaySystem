@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplayEventBlueprintLibrary.h"
@@ -65,21 +65,17 @@ FString UGameplayEventBlueprintLibrary::ConvertTickSourceToDisplayName(ETickSour
 	}
 }
 
-inline UGameplayEventSubsystem* UGameplayEventBlueprintLibrary::GetGameplayEventSubsystem(UObject* WorldObject)
+APlayerController* UGameplayEventBlueprintLibrary::GetPlayerControllerForEvent(const UObject* WorldContextObject, int32 PlayerIndex)
 {
-	check(WorldObject); // We need a WorldObject
+	return UGameplayStatics::GetPlayerController(WorldContextObject, PlayerIndex);
+}
 
-	UGameInstance* GameInstance = UGameplayStatics::GetGameInstance(WorldObject);
+UGameInstance* UGameplayEventBlueprintLibrary::GetGameInstanceForEvent(const UObject* WorldContextObject)
+{
+	return UGameplayStatics::GetGameInstance(WorldContextObject);
+}
 
-	if (!GameInstance)
-	{
-		GE_LOG(Fatal, TEXT("No GameInstance could be found while executing Blueprint bytecode."));
-		return nullptr;
-	}
-
-	UGameplayEventSubsystem* EventSubsystem = GameInstance->GetSubsystem<UGameplayEventSubsystem>();
-
-	check(EventSubsystem); // Are we operating out-of-bounds? 
-
-	return EventSubsystem;
+inline UGameplayEventSubsystem* UGameplayEventBlueprintLibrary::GetGameplayEventSubsystem(UObject* WorldContextObject)
+{
+	return UGameplayEventSubsystem::Get(WorldContextObject);
 }

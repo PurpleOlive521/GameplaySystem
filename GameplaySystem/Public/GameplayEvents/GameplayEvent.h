@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -7,10 +7,18 @@
 
 #include "GameplayTagContainer.h"
 #include "GameplayEventTypes.h"
+#include "GameplayTaskOwnerInterface.h"
+#include "GameplayEventHandle.h"
 
 #include "GameplayEvent.generated.h"
 
 class UGameplayEventSubsystem;
+
+// Invoked when the GameplayEvent ends
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnEventEndedSignature, UGameplayEvent* /* EndingEvent */);
+
+// Invoked when the GameplayEvent is aborted
+DECLARE_MULTICAST_DELEGATE(FOnEventAbortedSignature);
 
 namespace GameplayEventConstants
 {
@@ -28,9 +36,11 @@ namespace GameplayEventConstants
  * 
  *	* AbortEvent: External request to gracefully end the Event prematurely. 
  *	  For most Events will perform the same logic as EndEvent through FinishAbortWithEndEvent
+ * 
+ * Supports specialized GameplayTasks that enable latent logic that is tied to the GameplayEvents lifetime.
  */
 UCLASS(Blueprintable)
-class GAMEPLAYSYSTEM_API UGameplayEvent : public UObject
+class GAMEPLAYSYSTEM_API UGameplayEvent : public UObject, public IGameplayTaskOwnerInterface
 {
 	GENERATED_BODY()
 
@@ -38,7 +48,6 @@ public:
 	UGameplayEvent();
 
 	// --- Begin UObject 
-
 #if WITH_EDITOR
 	virtual void PostEditChangeProperty(struct FPropertyChangedEvent& PropertyChangedEvent) override;
 #endif
@@ -46,8 +55,16 @@ public:
 	virtual UWorld* GetWorld() const override;
 
 	virtual void FinishDestroy() override;
-
 	// --- End UObject
+
+	// --- Begin IGameplayTaskOwnerInterface
+	virtual UGameplayTasksComponent* GetGameplayTasksComponent(const UGameplayTask& Task) const override;
+	virtual AActor* GetGameplayTaskOwner(const UGameplayTask* Task) const override;
+	virtual AActor* GetGameplayTaskAvatar(const UGameplayTask* Task) const override;
+	virtual void OnGameplayTaskInitialized(UGameplayTask& Task) override;
+	virtual void OnGameplayTaskActivated(UGameplayTask& Task) override;
+	virtual void OnGameplayTaskDeactivated(UGameplayTask& Task) override;
+	// --- End IGameplayTaskOwnerInterface
 
 	void Init(UObject* InOwningObject);
 
@@ -56,7 +73,7 @@ public:
 	// Activates the GameplayEvent.
 	bool TryTriggerGameplayEvent(const FGameplayEventActivationData& ActivationData);
 
-	void StaticTryTriggerGameplayEvent(UWorld* World, const FGameplayEventActivationData& ActivationData) const;
+	void StaticTryTriggerGameplayEvent(const UObject* WorldContextObject, const FGameplayEventActivationData& ActivationData) const;
 
 	// Ends the GameplayEvent.
 	bool TryEndGameplayEvent();
@@ -81,7 +98,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
 	AActor* GetOwnerAsActor_Checked() const;
 
+	// Assumes this object is a valid WorldContextObject. 
 	UGameplayEventSubsystem* GetEventSubsystem() const;
+
+	// Gets the GameplayEventSubsystem from WorldContextObject.
+	UGameplayEventSubsystem* GetEventSubsystem(const UObject* WorldContextObject) const;
+
+	[[nodiscard]] FGameplayEventHandle GetEventHandle() const;
+
+	float GetDeltaTimeCoefficient() const;
 	
 	// Returns true if the GameplayEvent is done with it's tasks and should be removed.
 	bool ShouldCleanup() const;
@@ -167,7 +192,7 @@ protected:
 	// Boilerplate setup and enforcing policies before triggering fully.
 	bool PreTriggerEvent();
 
-	bool StaticPreTriggerEvent() const;
+	bool StaticPreTriggerEvent(const UObject* WorldContextObject) const;
 	
 	virtual void TriggerEvent(const FGameplayEventActivationData& ActivationData);
 
@@ -177,13 +202,13 @@ protected:
 
 	// Should only be implemented for GameplayEvents with EventInstancingPolicy set to Static.
 	// Does nothing when set to other policy's.
-	virtual void StaticTriggerEvent(UWorld* World, const FGameplayEventActivationData& ActivationData) const;
+	virtual void StaticTriggerEvent(const UObject* WorldContextObject, const FGameplayEventActivationData& ActivationData) const;
 
 	// Always called after the native StaticTriggerEvent.
 	// Should only be implemented for GameplayEvents with EventInstancingPolicy set to Static.
 	// Does nothing when set to other policy's.
 	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "BP Static Trigger Event"), Category = "GameplayEvent")
-	void K2_StaticTriggerEvent(UWorld* World, const FGameplayEventActivationData& ActivationData) const;
+	void K2_StaticTriggerEvent(const UObject* WorldContextObject, const FGameplayEventActivationData& ActivationData) const;
 
 	virtual void EndEvent();
 
@@ -217,7 +242,15 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
 	void StaticForceTerminate() const;
 
-	void MarkForCleanup();
+	// Returns true if the GameplayEvent has been Aborted already.
+	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
+	bool HasBeenAborted() const;
+
+	// Marks the Event for GC and stops any running tasks.
+	void StopEvent();
+
+	UPROPERTY()
+	TArray<TObjectPtr<UGameplayTask>> ActiveTasks;
 	
 private:
 
@@ -243,4 +276,10 @@ private:
 	uint32 bMarkedForCleanup : 1 = false;
 
 	uint32 bAppliedBlockQuery : 1 = false;
+	
+public:
+	// --- Delegates
+	FOnEventEndedSignature OnEventEndedDelegate;
+
+	FOnEventAbortedSignature OnEventAbortedDelegate;
 };

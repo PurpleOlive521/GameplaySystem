@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GA_PlayMontage.h"
@@ -8,14 +8,7 @@
 
 void UGA_PlayMontage::ActivateAbility(const FGameplayAbilityActivationData& ActivationData, FActiveGameplayAbility& OutActiveGameplayAbility)
 {
-	FPlayMontageParams PlayParams;
-	const float AnimDuration = PlayMontage(AnimationMontage, PlayParams);
 
-	// Allow Blueprint to overwrite this with a predefined value
-	if (OutActiveGameplayAbility.Duration == GameplayAbilityConstants::NO_DURATION)
-	{
-		OutActiveGameplayAbility.SetDuration(AnimDuration);
-	}
 }
 
 void UGA_PlayMontage::CancelAbility()

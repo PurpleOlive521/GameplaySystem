@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplayEventSubsystem.h"
@@ -6,37 +6,28 @@
 #include "Engine/GameInstance.h"
 #include "GameplayEvent.h"
 #include "GameplayEventBlueprintLibrary.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameplayTasksComponent.h"
+#include "DevelopmentTypes.h"
 
 void UGameplayEventSubsystem::Initialize(FSubsystemCollectionBase& Collection)
 {
-    FCoreUObjectDelegates::PreLoadMapWithContext.AddUObject(this, &UGameplayEventSubsystem::HandlePreLoadMap);
+    Super::Initialize(Collection);
+
     FCoreUObjectDelegates::PreGarbageCollectConditionalBeginDestroy.AddUObject(this, &UGameplayEventSubsystem::HandlePreGarbageCollect);
-
-    const UGameInstance* LocalGameInstance = GetGameInstance();
-
-    if (!LocalGameInstance)
-    {
-        GE_LOG(Error, TEXT("Could not get GameInstance on Init."));
-    }
 }
 
 void UGameplayEventSubsystem::Deinitialize()
 {
-    FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
     FCoreUObjectDelegates::PreGarbageCollectConditionalBeginDestroy.RemoveAll(this);
+    
+    Super::Deinitialize();
 }
 
-bool UGameplayEventSubsystem::ShouldCreateSubsystem(UObject* Outer) const
-{
-    // Prevents servers or other instances from initializing this subsystem
-    const UGameInstance* GameInstance = CastChecked<UGameInstance>(Outer);
-    const bool bIsServerWorld = GameInstance->IsDedicatedServerInstance();
-    return !bIsServerWorld;
-}
-
-// We calculate the DeltaTime for the GameplayEvents to allow for more caching
 void UGameplayEventSubsystem::Tick(float DeltaTime)
 {
+    Super::Tick(DeltaTime);
+
     const float GlobalTimeDilation = GetWorld()->GetWorldSettings()->GetEffectiveTimeDilation();
 
     const float AbsoluteDeltaTime = DeltaTime / GlobalTimeDilation;
@@ -57,14 +48,14 @@ void UGameplayEventSubsystem::Tick(float DeltaTime)
 
 ETickableTickType UGameplayEventSubsystem::GetTickableTickType() const
 {
-    // Set to Conditional to ensure that CDO is not marked for ticking
-    return ETickableTickType::Conditional;
+    return Super::GetTickableTickType();
 }
 
 bool UGameplayEventSubsystem::IsTickable() const
 {
-    // No ticking for CDO
-    return !HasAnyFlags(RF_ClassDefaultObject);
+    FAIL_ON_FAILED_SUPER(IsTickable());
+
+    return true;
 }
 
 TStatId UGameplayEventSubsystem::GetStatId() const
@@ -74,12 +65,30 @@ TStatId UGameplayEventSubsystem::GetStatId() const
 
 UWorld* UGameplayEventSubsystem::GetTickableGameObjectWorld() const
 {
-    return GetGameInstance()->GetWorld();
+    return GetWorld();
 }
 
 bool UGameplayEventSubsystem::IsTickableWhenPaused() const
 {
-    return false;
+    // We allow some GameplayEvents to tick when paused
+    return true;
+}
+
+UGameplayEventSubsystem* UGameplayEventSubsystem::Get(const UObject* WorldContext)
+{
+    if (WorldContext)
+    {
+        const UWorld* World = WorldContext->GetWorld();
+        if (World)
+        {
+            UGameplayEventSubsystem* EventSubsystem = World->GetSubsystem<UGameplayEventSubsystem>();
+            ensure(EventSubsystem);
+            
+            return EventSubsystem;
+        }
+    }
+
+    return nullptr;
 }
 
 FGameplayEventHandle UGameplayEventSubsystem::TriggerEvent(TSubclassOf<UGameplayEvent> EventClass, UObject* Owner)
@@ -214,6 +223,8 @@ FGameplayEventHandle UGameplayEventSubsystem::TriggerEvent_Internal(TSubclassOf<
 {
     check(EventClass);
 
+    ensure(Owner);
+
     const UGameplayEvent* EventCDO = EventClass->GetDefaultObject<UGameplayEvent>();
 
     const bool CanActivate = CanTrigger(EventCDO, Owner);
@@ -226,8 +237,7 @@ FGameplayEventHandle UGameplayEventSubsystem::TriggerEvent_Internal(TSubclassOf<
     // No state is required, and we do not store the GameplayEvent for later callbacks.
     if (EventCDO->InstancingPolicy == EEventInstancingPolicy::EEIP_Static)
     {
-        UWorld* World = Owner->GetWorld();
-        EventCDO->StaticTryTriggerGameplayEvent(World, ActivationData);
+        EventCDO->StaticTryTriggerGameplayEvent(Owner, ActivationData);
         return FGameplayEventHandle();
     }
 
@@ -298,6 +308,11 @@ void UGameplayEventSubsystem::TickEvent(UGameplayEvent* Event, float DeltaTime, 
 bool UGameplayEventSubsystem::CanTrigger(const UGameplayEvent* EventCDO, UObject* Owner)
 {
     FGameplayEventMapLock ActiveLock(*this);
+
+    if (bBlockAllEvents)
+    {
+        return false;
+    }
 
     AActor* OwningActor = Cast<AActor>(Owner);
 
@@ -486,12 +501,27 @@ void UGameplayEventSubsystem::RequestCleanup()
     }
 }
 
-void UGameplayEventSubsystem::HandlePreLoadMap(const FWorldContext& WorldContext, const FString& MapName)
+void UGameplayEventSubsystem::SetBlockAllEvents(bool InState)
 {
-    if (GEngine->IsInitialized())
+    bBlockAllEvents = InState;
+}
+
+bool UGameplayEventSubsystem::GetBlockAllEvents() const
+{
+    return (bool)bBlockAllEvents;
+}
+
+FGameplayEventHandle UGameplayEventSubsystem::GetHandleForEvent(const UGameplayEvent* Event) const
+{
+    for (const auto& [Handle, ContainedEvent] : EventMap)
     {
-        ClearAllGameplayEvents();
+        if (ContainedEvent == Event)
+        {
+            return Handle;
+        }
     }
+
+    return FGameplayEventHandle();
 }
 
 void UGameplayEventSubsystem::HandlePreGarbageCollect()

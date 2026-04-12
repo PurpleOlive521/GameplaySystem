@@ -1,9 +1,9 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Components/ActorComponent.h"
+#include "GameplayTasksComponent.h"
 
 #include "AttributeEffect.h"
 #include "GameplayEffect.h"
@@ -14,6 +14,7 @@
 #include "GameplaySystemTypes.h"
 #include "functional"
 #include "Animation/AnimInstance.h"
+#include "SaveableObjectInterface.h"
 
 #include "GameplaySystemComponent.generated.h"
 
@@ -28,7 +29,7 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAnyAttributeChangedSignature, EAt
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLeveledUpSignature, int, PreviousLevel, int, CurrentLevel, float, NextLevelExp);
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAbilityEndedSignature, const FGameplayAbilityHandle&, Handle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAnyAbilityEndedSignature, const FGameplayAbilityHandle&, Handle);
 
 
 // A collection of delegates that are accessed and managed through a single entry-point. 
@@ -56,6 +57,8 @@ struct GAMEPLAYSYSTEM_API FDelegateCollection
 
 	// Broadcasts the AttributeType delegates if they exists.
 	inline void BroadcastMultiple(const TArray<EAttributeType>& Attributes);
+
+	inline void BroadcastAll();
 
 	// Broadcasts are queued while the lock is active, and performed once the lock is removed
 	struct FBroadcastLock
@@ -111,18 +114,18 @@ struct GAMEPLAYSYSTEM_API FPlayMontageParams
 
 	FPlayMontageParams() = default;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly);
+	UPROPERTY(BlueprintReadWrite, EditAnywhere);
 	float PlayRate = 1.0f;
 
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly);
+	UPROPERTY(BlueprintReadWrite, EditAnywhere);
 	EMontagePlayReturnType PlayReturnType = EMontagePlayReturnType::Duration;
 
 	// Starts the Montage at the beginning of this section.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly);
+	UPROPERTY(BlueprintReadWrite, EditAnywhere);
 	FName StartSection;
 
 	// Starts the Montage at the end of the section instead.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly);
+	UPROPERTY(BlueprintReadWrite, EditAnywhere);
 	bool bUseEndOfSection = false;
 
 	FOnMontageBlendingOutStarted MontageBlendOutDelegate = {};
@@ -147,11 +150,9 @@ struct GAMEPLAYSYSTEM_API FPlayMontageParams
 // Abilities are their own bundles of logic with specified activation-requirements, and provide an API to manage state and life-cycle events such as Activation, Cancellation, and Ending.
 // * ActiveGameplayAbility are the handles for activated abilities, keeping track of duration and calling the necessary life-cycle events.
 // * Are instanced on use according to their InstancingPolicy. Allows for reusable abilities, or per-activation created instances for flexibility and performance.
-//
-// - GameplayTags
 
 UCLASS(Blueprintable, ClassGroup = GameplaySystem, hidecategories = (Object, LOD, Lighting, Transform, Sockets, TextureStreaming), meta=(BlueprintSpawnableComponent) )
-class GAMEPLAYSYSTEM_API UGameplaySystemComponent : public UActorComponent, public IGameplayTagOwnerInterface
+class GAMEPLAYSYSTEM_API UGameplaySystemComponent : public UGameplayTasksComponent, public IGameplayTagOwnerInterface, public ISaveableObjectInterface
 {
 	GENERATED_BODY()
 
@@ -162,7 +163,7 @@ class GAMEPLAYSYSTEM_API UGameplaySystemComponent : public UActorComponent, publ
 	friend class UGameplaySystemDebugWidget;
 
 public:	
-	UGameplaySystemComponent();
+	UGameplaySystemComponent(const FObjectInitializer& ObjectInitializer);
 
 	virtual void BeginPlay() override;
 
@@ -171,7 +172,6 @@ public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 	// --- Begin GameplayTagOwnerInterface
-
 	void AddTag(const FGameplayTag& TagToAdd) override;
 	void RemoveTag(const FGameplayTag& TagToRemove) override;
 	void ClearTag(const FGameplayTag& TagToClear) override;
@@ -180,16 +180,29 @@ public:
 	bool HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst) override;
 	int GetTagCount(const FGameplayTag& TagToCheck) override;
 	int GetTotalTagCount() override;
-
 	// --- End GameplayTagOwnerInterface
 
-	// --- Save System
+	// --- Begin GameplayTasksComponent Interface
+	// TODO: Look at emulating the same logic as the GameplayTasksComponent, where we disable ticking when we have nothing to tick, and enable it when tickables are added?
+	virtual bool GetShouldTick() const override;
+	// --- End GameplayTasksComponent Interface
+
+	// --- Begin SaveableObject Interface
+	virtual bool OnSerialize(FSaveGameArchive& Archive, bool bIsLoading) override;
+	// --- Begin SaveableObject Interface
+
+	// --- Helpers
+
+	// Tries to get the GameplaySystemComponent from this Actor.
+	// Will first try through the GameplaySystemOwnerInterface, otherwise will resort to a component search.
+	UFUNCTION(BlueprintCallable)
+	static UGameplaySystemComponent* GetGameplaySystemFromActor(AActor* Actor);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SaveSystem")
-	FGameplaySystemSaveObject SaveToObject() const;
+	FGameplaySystemSaveObject Save() const;
 
 	UFUNCTION(BlueprintCallable, Category = "SaveSystem")
-	void LoadFromObject(const FGameplaySystemSaveObject& GameplaySystemSaveData);
+	void Load(const FGameplaySystemSaveObject& GameplaySystemSaveData);
 
 
 
@@ -225,14 +238,14 @@ public:
 
 	TMap<EAttributeType, FAttribute>::TConstIterator GetConstAttributeIterator() const;
 
-
 	// Add an attribute to the component. Will overwrite any existing attribute with the same type!
 	UFUNCTION(BlueprintCallable, Category = "Attributes")
 	void AddAttribute(FAttribute Attribute);
 
 	// Simulate what the attributes values would be with AttributeEffectsToSimulate applied. Generates a TMap containing all attributes, changed or not.
+	// The AttributeEffectsToSimulate can be queried to see individual contributions and modifications.
 	UFUNCTION(BlueprintCallable, Category = "Attributes")
-	void SimulateAttributes(const TArray<FAttributeEffect>& AttributeEffectsToSimulate, TMap<EAttributeType, FAttribute>& GeneratedAttributesOut);
+	void SimulateAttributes(UPARAM(ref) TArray<FAttributeEffect>& AttributeEffectsToSimulate, TMap<EAttributeType, FAttribute>& GeneratedAttributesOut);
 
 	// Returns the value of the CoefficientAttribute in this GameplaySystem, or 0.0f if the attribute is not present.
 	UFUNCTION(BlueprintCallable, Category = "Attributes")
@@ -246,22 +259,14 @@ public:
 
 	// --- AttributeEffects
 
-	void ApplyAttributeEffect(FAttributeEffect EffectToApply, EDurationType Type);
+	void ApplyAttributeEffect(FAttributeEffect& EffectToApply, EDurationType Type);
 
 	// Removes the first instance of the AttributeEffect.
 	void RemoveAttributeEffect(FAttributeEffect& EffectToRemove);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AttributeEffects")
-	int GetActiveEffectsCount();
+	int GetActiveEffectsCount() const;
 	
-	// Gets all the AttributesEffects in this GameplaySystemComponent
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AttributeEffects")
-	void GetActiveAttributeEffects(TArray<FAttributeEffect>& ActiveEffectsOut) const;
-
-	// Overwrites any present AttributeEffects with AttributeEffectsIn
-	UFUNCTION(BlueprintCallable, Category = "AttributeEffects")
-	void SetActiveAttributeEffects(const TArray<FAttributeEffect>& AttributeEffectsIn);
-
 
 
 	// --- Level System
@@ -396,7 +401,7 @@ public:
 
 	// Attempts to activate the specified Ability with the given ActivationData.
 	// Can fail if Actor does not meet the ability's activation requirements or if a cooldown for said ability is present.
-	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Use Ability With Activation Data"), Category = "GameplayAbility")
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Use Ability With Activation Data"), Category = GameplayAbility)
 	bool UseAbility_ActivationData(TSubclassOf<UGameplayAbility> AbilityToUse, const FGameplayAbilityActivationData& ActivationData, FGameplayAbilityHandle& OutHandle);
 
 	// Forces the Ability to activate regardless of requirements or cooldowns. Can still fail if the ability's internal activation logic prevents it.
@@ -419,7 +424,7 @@ public:
 
 	// Get the Handle for the Ability. Returns a invalid Handle if none exists.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayAbility")
-	FGameplayAbilityHandle GetAbilityHandleFromInstance(UGameplayAbility* Instance);
+	FGameplayAbilityHandle GetAbilityHandleFromInstance(const UGameplayAbility* Instance) const;
 
 	// Get the Handle for the Ability. Returns a invalid Handle if none exists.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayAbility")
@@ -509,8 +514,8 @@ public:
 	// Plays the Montage in the GameplaySystems AnimInstance. Returns the length of the played montage. 
 	float PlayMontage(UGameplayAbility* PlayingAbility, UAnimMontage* MontageToPlay, FPlayMontageParams& Params);
 
-	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
 	// Gets the ability that is currently animating, if any.
+	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
 	UGameplayAbility* GetAnimatingAbility() const;
 
 	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
@@ -518,13 +523,22 @@ public:
 
 	FGameplaySystemAnimMontageInfo* GetAnimMontageInfo();
 
+	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
+	UAnimMontage* GetCurrentAnimMontage() const;
 
+	// Stops the current AnimMontage. Uses the AnimMontages own BlendOutTime if OverrideBlendOutTime is not passed.
+	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
+	void StopCurrentMontage(float OverrideBlendOutTime = -1.0f);
 
 	// --- General
 
 	// Cancels any remaining abilities and destroys instances.
 	UFUNCTION(BlueprintCallable)
 	void DestroyActiveState();
+
+	// Gets a snapshot of the system state.
+	UFUNCTION(BlueprintCallable)
+	FGameplaySystemSnapshot GetSnapshot();
 
 
 protected:
@@ -541,9 +555,9 @@ protected:
 
 	bool RemoveGameplayEffect_Internal(const FGameplayEffectHandle& EffectToRemove);
 
-	void ApplyAttributeEffect_Internal(FAttributeEffect EffectToApply);
+	void ApplyAttributeEffect_Internal(const FAttributeEffect& EffectToApply);
 
-	void ApplyAttributeEffect_Internal_NoRemoval(FAttributeEffect EffectToApply);
+	void ApplyAttributeEffect_Internal_Instant(FAttributeEffect EffectToApply);
 
 	void RegisterGameplayEffect(const FGameplayEffectHandle& Handle, FActiveGameplayEffect& ActiveEffect);
 
@@ -552,6 +566,8 @@ protected:
 	bool UseAbility_Internal(TSubclassOf<UGameplayAbility> AbilityToUse, const FGameplayAbilityActivationData& ActivationData, FGameplayAbilityHandle& OutHandle);
 
 	void EndAbility(const FGameplayAbilityHandle& Handle);
+
+	void CollectModifiers(TArray<FAttributeEffect*>& AttributeEffects);
 
 	// Creates a new Instance if required by it's EInstancingPolicy.
 	UGameplayAbility* GetOrCreateAbilityInstance(TSubclassOf<UGameplayAbility> Ability, bool& bOutCreatedNew);
@@ -570,7 +586,7 @@ protected:
 	TObjectPtr<UCurveTable> LevelScalingCurveTable = nullptr;
 
 	// A value of -1 means we don't use the Level system, and won't respond to level-ups.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Attributes|Level System")
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Attributes|Level System")
 	int EntityLevel = 0;
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AbilityBuffering")
@@ -606,18 +622,19 @@ private:
 
 	uint32 bIsGameplayEffectsPaused : 1 = false;
 
-	TMap<EAttributeType, FAttribute> Attributes;
-
-	// Active effects that can be removed or modified
-	TArray<FAttributeEffect> ActiveAttributeEffects;
-
-	// Applied Gameplay effects.
-	TMap<FGameplayEffectHandle, FActiveGameplayEffect> ActiveGameplayEffects;
-
 	float ExpRequiredForNextLevel = 0.0f;
 
+	UPROPERTY(SaveGame)
 	float EntityExperience = 0.0f;
 
+	uint32 CachedAttributeEffectCount = 0U;
+
+	UPROPERTY(SaveGame)
+	TMap<EAttributeType, FAttribute> Attributes;
+
+	TMap<FGameplayEffectHandle, FActiveGameplayEffect> ActiveGameplayEffects;
+
+	UPROPERTY(SaveGame)
 	FGameplayTagSystem GameplayTagSystem;
 
 	FGameplayTagSystem BlockedAbilityTags;
@@ -645,5 +662,5 @@ public:
 
 	// Invoked both on Cancel and End.
 	UPROPERTY(BlueprintAssignable)
-	FOnAbilityEndedSignature OnAbilityEndedDelegate;
+	FOnAnyAbilityEndedSignature OnAnyAbilityEndedDelegate;
 };

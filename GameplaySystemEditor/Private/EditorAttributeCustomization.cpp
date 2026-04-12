@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Heavy Duty Tape Studios. All rights reserved.
 
 
 #include "EditorAttributeCustomization.h"
@@ -6,6 +6,8 @@
 #include "IDetailChildrenBuilder.h"
 #include "AttributeDataSet.h"
 #include "GameplaySystemBlueprintLibrary.h"
+#include "EditorCustomizationHelpers.h"
+#include "IPropertyUtilities.h"
 
 TSharedRef<IPropertyTypeCustomization> FEditorAttributeCustomization::MakeInstance()
 {
@@ -18,19 +20,15 @@ void FEditorAttributeCustomization::CustomizeHeader(TSharedRef<IPropertyHandle> 
 
 void FEditorAttributeCustomization::CustomizeChildren(TSharedRef<IPropertyHandle> InStructPropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& StructCustomizationUtils) 
 {
+	const FSimpleDelegate OnValueChangedDelegate = FSimpleDelegate::CreateSP(this, &FEditorAttributeCustomization::OnPropertyChanged, StructCustomizationUtils.GetPropertyUtilities());
+	InStructPropertyHandle->SetOnChildPropertyValueChanged(OnValueChangedDelegate);
+
 	TSharedPtr<IPropertyHandle> TypePropertyHandle = InStructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FEditorAttribute, Type));
 	TSharedPtr<IPropertyHandle> BaseValuePropertyHandle = InStructPropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FEditorAttribute, BaseValue));
 
-	check(TypePropertyHandle && BaseValuePropertyHandle);
+	check(BaseValuePropertyHandle);
 
-	TArray<void*> RawData;
-	TypePropertyHandle->AccessRawData(RawData);
-
-	EAttributeType AttributeType = EAttributeType::EAT_NONE;
-	if (RawData.Num() > 0)
-	{
-		AttributeType = *static_cast<EAttributeType*>(RawData[0]);
-	}
+	EAttributeType AttributeType = GetPropertyRaw<EAttributeType>(TypePropertyHandle);
 
 	const FText FinalRowName = FText::AsCultureInvariant(INVTEXT("Attribute: ").ToString() + UGameplaySystemBlueprintLibrary::ConvertAttributeToDisplayName(AttributeType));
 
@@ -89,6 +87,14 @@ void FEditorAttributeCustomization::CustomizeChildren(TSharedRef<IPropertyHandle
 			]
 		];
 		
+}
+
+void FEditorAttributeCustomization::OnPropertyChanged(TSharedPtr<IPropertyUtilities> Utils)
+{
+	if (Utils)
+	{
+		Utils->RequestForceRefresh();
+	}
 }
 
 

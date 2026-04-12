@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Heavy Duty Tape Studios. All rights reserved.
 
 
 #include "GameplaySystemEditorTypes.h"

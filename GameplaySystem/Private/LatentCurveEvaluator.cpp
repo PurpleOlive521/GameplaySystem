@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "LatentCurveEvaluator.h"
@@ -25,7 +25,7 @@ bool ULatentCurveEvaluator::IsTickable() const
         return false;
     }
 
-    return bIsActive && !bReliesOnLeaderForTick;
+    return bIsActive && !bReliesOnLeaderForTick && !bHasDisabledTicking;
 }
 
 TStatId ULatentCurveEvaluator::GetStatId() const
@@ -52,19 +52,53 @@ void ULatentCurveEvaluator::FinishDestroy()
 
 void ULatentCurveEvaluator::TickCurve(float DeltaTime)
 {
-    ElapsedTime += DeltaTime;
-
-    const bool IsFinished = HasFinishedEvaluating();
-
-    if (IsFinished)
+    if (!bIsActive)
     {
-        Stop();
         return;
     }
+    
+    const float Coefficient = Direction == EPlayDirection::EPD_Forward ? 1.0f : -1.0f;
+    EvaluatedTime += DeltaTime * Coefficient;
+
+    SetEvaluatedTime(EvaluatedTime);
 
     const float EvaluatedValue = EvaluateCurve();
 
-    OnUpdateEvaluationDelegate.ExecuteIfBound(EvaluatedValue);
+    OnUpdateDelegate.ExecuteIfBound(EvaluatedValue);
+
+    const bool IsFinished = HasFinishedEvaluating();
+    if (IsFinished)
+    {
+        bIsActive = false;
+        OnFinishedDelegate.Execute();
+    }
+}
+
+void ULatentCurveEvaluator::PlayByType(EEvaluatorPlayTypePins PlayType)
+{
+    switch (PlayType)
+    {
+    case(EEvaluatorPlayTypePins::Play):
+    {
+        Play();
+        break;
+    }
+
+    case(EEvaluatorPlayTypePins::ReverseFromEnd):
+    {
+        ReverseFromEnd();
+        break;
+    }
+
+    case(EEvaluatorPlayTypePins::PlayFromStart):
+    {
+        PlayFromStart();
+        break;
+    }
+
+    default:
+        checkNoEntry(); // Type not supported yet.
+    }
 }
 
 void ULatentCurveEvaluator::Play()
@@ -75,9 +109,39 @@ void ULatentCurveEvaluator::Play()
         return;
     }
 
-    ElapsedTime = 0;
     bIsActive = true;
-    bIsReversed = false;
+}
+
+void ULatentCurveEvaluator::PlayFromStart()
+{
+    // Can't reactivate when already active.
+    if (bIsActive)
+    {
+        return;
+    }
+
+    bIsActive = true;
+
+    StartTime = 0.0f;
+    EvaluatedTime = 0.0f;
+    TargetTime = GetLastKey();
+    Direction = EPlayDirection::EPD_Forward;
+}
+
+void ULatentCurveEvaluator::ReverseFromEnd()
+{
+    // Can't reactivate when already active.
+    if (bIsActive)
+    {
+        return;
+    }
+
+    bIsActive = true;
+
+    StartTime = GetLastKey();
+    EvaluatedTime = 0.0f;
+    TargetTime = 0.0f;
+    Direction = EPlayDirection::EPD_Backward;
 }
 
 void ULatentCurveEvaluator::Stop(bool bBroadcastLastKey)
@@ -90,44 +154,61 @@ void ULatentCurveEvaluator::Stop(bool bBroadcastLastKey)
 
     bIsActive = false;
 
-
-    OnUpdateEvaluationDelegate.Clear();
-
     if (bBroadcastLastKey)
     {
-        // Move ahead to the last key and sample it's value, to ensure that we end in the same state as it would have if evaluated continously.
-        ElapsedTime = TargetTime;
-        const float EvaluatedValue = EvaluateCurve();
-        OnFinishedEvaluationDelegate.ExecuteIfBound(EvaluatedValue);
+        // Move ahead to the target key and sample it's value, to ensure that we end in the same state as it would have if evaluated continously.
+        const float EvaluatedValue = ForceEvaluateAt(TargetTime);
+        OnUpdateDelegate.Execute(EvaluatedValue);
+        OnFinishedDelegate.ExecuteIfBound();
     }
-
-    OnFinishedEvaluationDelegate.Clear();
 }
 
-void ULatentCurveEvaluator::ReverseFromEnd()
+void ULatentCurveEvaluator::SetPlayDirection(EPlayDirection InDirection)
 {
-    // Can't reactivate when already active.
-    if (bIsActive)
+    if (Direction == InDirection)
     {
         return;
     }
 
-    ElapsedTime = 0;
-    bIsActive = true;
-    bIsReversed = true;
-}
+    Direction = InDirection;
 
+    // Swap start and end time
+    float Temp = StartTime;
+    StartTime = TargetTime;
+    TargetTime = Temp;
+}
 
 bool ULatentCurveEvaluator::HasFinishedEvaluating() const
 {
-    if (ElapsedTime >= TargetTime)
+    if (!bIsActive)
     {
         return true;
     }
 
-    if (!bIsActive)
+    switch (Direction)
     {
-        return true;
+        case EPlayDirection::EPD_Forward: 
+        {
+            if (EvaluatedTime >= TargetTime)
+            {
+                return true;
+            }
+
+            break;
+        }
+
+        case EPlayDirection::EPD_Backward: 
+        {
+            if (EvaluatedTime <= TargetTime)
+            {
+                return true;
+            }
+
+            break;
+        }
+
+        default:
+            checkNoEntry(); // Not supported yet.
     }
 
     return false;
@@ -142,13 +223,10 @@ void ULatentCurveEvaluator::AssignCurve(UCurveFloat* InCurve)
 
 void ULatentCurveEvaluator::SetEndTime(float InEndTime)
 {
-    if(InEndTime == 0.0f)
+    if(InEndTime == NO_TARGET_TIME)
     {
-        if (Curve)
-        {
-            // Assume that we want to evaluate until the end of the curve is hit
-            TargetTime = Curve->FloatCurve.GetLastKey().Time;
-        }
+        // Assume that we want to evaluate until the end of the curve is hit
+        TargetTime = GetLastKey();
     }
     else
     {
@@ -156,14 +234,14 @@ void ULatentCurveEvaluator::SetEndTime(float InEndTime)
     }
 }
 
-void ULatentCurveEvaluator::SetUpdateDelegate(const FOnUpdateEvaluationSignature& InUpdateDelegate)
+void ULatentCurveEvaluator::SetUpdateDelegate(const FOnEvaluateSignature& InUpdateDelegate)
 {
-	OnUpdateEvaluationDelegate = InUpdateDelegate;
+	OnUpdateDelegate = InUpdateDelegate;
 }
 
-void ULatentCurveEvaluator::SetFinishDelegate(const FOnFinishedEvaluationSignature& InFinishDelegate)
+void ULatentCurveEvaluator::SetFinishDelegate(const FOnFinishedSignature& InFinishDelegate)
 {
-	OnFinishedEvaluationDelegate = InFinishDelegate;
+	OnFinishedDelegate = InFinishDelegate;
 }
 
 void ULatentCurveEvaluator::SetUpdatingPolicy(bool bInEvaluateWhenPaused)
@@ -182,20 +260,49 @@ void ULatentCurveEvaluator::SetLeaderTickObject(FObjectTickFollowers& LeaderTick
 
 float ULatentCurveEvaluator::EvaluateCurve()
 {
-    ElapsedTime = FMath::Clamp(ElapsedTime, 0.0f, TargetTime);
-
     if (!Curve)
     {
         return 0.0f;
     }
 
-    float DirectionAdjustedTime = ElapsedTime;
+    return Curve->GetFloatValue(EvaluatedTime);
+}
 
-    if (bIsReversed)
+void ULatentCurveEvaluator::DisableTicking()
+{
+    bHasDisabledTicking = true;
+}
+
+float ULatentCurveEvaluator::GetLastKey() const
+{
+    if (!Curve || Curve->FloatCurve.IsEmpty())
     {
-        // Count backwards
-        DirectionAdjustedTime = FMath::Abs(TargetTime - ElapsedTime);
+        return 0.0f;
     }
 
-    return Curve->GetFloatValue(DirectionAdjustedTime);
+    return Curve->FloatCurve.GetLastKey().Time;
 }
+
+float ULatentCurveEvaluator::ForceEvaluateAt(float InTime)
+{
+    if (!Curve)
+    {
+        return 0.0f;
+    }
+
+    return Curve->GetFloatValue(InTime);
+}
+
+void ULatentCurveEvaluator::SetEvaluatedTime(float InTime)
+{
+    EvaluatedTime = InTime;
+
+    const bool bClampForward = Direction == EPlayDirection::EPD_Forward && EvaluatedTime > TargetTime;
+    const bool bClampBackward = Direction == EPlayDirection::EPD_Backward && EvaluatedTime < TargetTime;
+    if (bClampForward || bClampBackward)
+    {
+        EvaluatedTime = TargetTime;
+    }
+}
+
+

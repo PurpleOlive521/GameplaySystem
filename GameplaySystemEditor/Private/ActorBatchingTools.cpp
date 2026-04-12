@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Heavy Duty Tape Studios. All rights reserved.
 
 
 #include "ActorBatchingTools.h"
@@ -208,6 +208,13 @@ void UActorBatchingTools::TryBatchSelectedActors()
 	{
 		GSED_LOG(Error, TEXT("ActorBatchingTools: Aborting Batch!"));
 		return;
+	}
+
+	// Avoids warning from FActorElementLevelEditorSelectionCustomization where we still select the now-deleted Static Mesh Actors.
+	USelection* CurrentSelection = GEditor->GetSelectedActors();
+	if (CurrentSelection)
+	{
+		CurrentSelection->DeselectAll();
 	}
 
 	FText ResultText;

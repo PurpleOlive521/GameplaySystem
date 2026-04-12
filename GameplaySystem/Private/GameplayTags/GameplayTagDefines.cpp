@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplayTagDefines.h"
@@ -49,6 +49,8 @@ UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_Status_IFrames,					"Status.IFrames",
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_Status_Untargetable,				"Status.Untargetable", "The character's actions are uninterruptable, and it can't be damaged.");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_Status_RecentlyPerformedAction,	"Status.RecentlyPerformedAction", "A action was recently performed. Usually means the character is mid-combat.");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_Status_Overheating,				"Status.Overheating", "Character will overheat in a short bit, causing damage if not recovered from.");
+UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_Status_OverheatBuildupImmunity,	"Status.OverheatBuildupImmunity", "Character will not receive Overheat buildup from sources deemed negative.");
+UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_Status_Overclocking,				"Status.Overclocking", "The character is within the OverclockThreshold and is temporarily buffed.");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_Status_InCombat,					"Status.InCombat", "The character is currently in combat.");
 
 
@@ -78,6 +80,8 @@ UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_GameplayAbility_Types,	"GameplayAbili
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_GameplayAbility_Types_PrimaryAction, "GameplayAbility.Types.PrimaryAction", "Signifies that the Ability prohibits further actions unless cancelled, or wants to be treated as such.");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_GameplayAbility_Types_Dash,			"GameplayAbility.Types.Dash", "The ability is an movement-based action of the type 'Dash'.");
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_GameplayAbility_Types_Overcharge,	"GameplayAbility.Types.Overcharge", "Part of the overcharging sequence.");
+UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_GameplayAbility_Types_Overheat,		"GameplayAbility.Types.Overheat", "In response to a Overheat.");
+
 
 UE_DEFINE_GAMEPLAY_TAG_COMMENT(GAMEPLAYTAG_GameplayAbility_Status,	"GameplayAbility.Status", "States that GameplayAbilities can have.");
 

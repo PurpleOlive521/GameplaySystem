@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -70,6 +70,9 @@ struct GAMEPLAYSYSTEM_API FGameplayEventActivationData
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
 	float Magnitude = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FVector Location = {};
 };
 
 constexpr uint64 INVALID_TICK_FOLLOWER_HANDLE_ID = 0U;

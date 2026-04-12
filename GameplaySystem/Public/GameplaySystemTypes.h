@@ -1,9 +1,12 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "GameplayTagContainer.h"
+#include "AttributeTypes.h"
+#include "Attribute.h"
+#include "GameplayTags/GameplayTagSystem.h"
 #include "GameplaySystemTypes.generated.h"
 
 class UGameplaySystemComponent;
@@ -78,6 +81,23 @@ struct GAMEPLAYSYSTEM_API FGameplaySystemAnimMontageInfo
 	// Routes AnimNotifies from blendspaces to the correct ability. We have no way of knowing what AnimMontage the blendspace is playing,
 	// let alone which ability is responsible for triggering the blendspace. As such, an ability can "claim" all notifies while this is true.
 	bool bAbilityIsOverriding = false;
+};
+
+// Caches select properties for comparing system state at different points in time. Mainly intended for GameplayEffects.
+USTRUCT(BlueprintType)
+struct GAMEPLAYSYSTEM_API FGameplaySystemSnapshot
+{
+	GENERATED_BODY();
+
+	FGameplaySystemSnapshot() = default;
+
+	FGameplaySystemSnapshot(UGameplaySystemComponent* GameplaySystem);
+
+	UPROPERTY(BlueprintReadWrite)
+	TMap<EAttributeType, FAttribute> Attributes;
+
+	UPROPERTY(BlueprintReadWrite)
+	FGameplayTagSystem GameplayTags;
 };
 
 // All credit to Unreal's GameplayAbilitySystem for the original implementation of FGameplayTagBlueprintPropertyMapping.

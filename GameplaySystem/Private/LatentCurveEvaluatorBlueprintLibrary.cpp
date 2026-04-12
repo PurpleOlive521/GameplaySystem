@@ -1,9 +1,10 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+
 
 #include "LatentCurveEvaluatorBlueprintLibrary.h"
 #include "Kismet/GameplayStatics.h"
 
-ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateLatentCurveEvaluator(UCurveFloat* InCurve, UObject* Owner, const FOnUpdateEvaluationSignature& OnUpdateEvaluationFunction, const FOnFinishedEvaluationSignature& OnFinishedEvaluationFunction, float EndTime, bool bEvaluateWhenPaused)
+ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateLatentCurveEvaluator(UCurveFloat* InCurve, UObject* Owner, const FOnEvaluateSignature& OnUpdateEvaluationFunction, const FOnFinishedSignature& OnFinishedEvaluationFunction, float EndTime, bool bEvaluateWhenPaused)
 {
 	ULatentCurveEvaluator* CurveEvaluator = NewObject<ULatentCurveEvaluator>(Owner, ULatentCurveEvaluator::StaticClass());
 
@@ -16,24 +17,12 @@ ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateLatentCurveE
 	return CurveEvaluator;
 }
 
-ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateAndPlayLatentCurveEvaluator(EPlayTypePins PlayType, UCurveFloat* InCurve, UObject* Owner, const FOnUpdateEvaluationSignature& OnUpdateEvaluationFunction, const FOnFinishedEvaluationSignature& OnFinishedEvaluationFunction, float EndTime, bool bEvaluateWhenPaused)
+ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateAndPlayLatentCurveEvaluator(EEvaluatorPlayTypePins PlayType, UCurveFloat* InCurve, UObject* Owner, const FOnEvaluateSignature& OnUpdateEvaluationFunction, const FOnFinishedSignature& OnFinishedEvaluationFunction, float EndTime, bool bEvaluateWhenPaused)
 {
 	ULatentCurveEvaluator* CreatedCurve = CreateLatentCurveEvaluator(InCurve, Owner, OnUpdateEvaluationFunction, OnFinishedEvaluationFunction, EndTime, bEvaluateWhenPaused);
+	ensure(CreatedCurve);
 
-	switch (PlayType)
-	{
-		case(EPlayTypePins::Play):
-		{
-			CreatedCurve->Play();
-			break;
-		}
-
-		case(EPlayTypePins::ReverseFromEnd): 
-		{
-			CreatedCurve->ReverseFromEnd();
-			break;
-		}
-	}
+	CreatedCurve->PlayByType(PlayType);
 
 	return CreatedCurve;
 }

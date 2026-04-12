@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Heavy Duty Tape Studios. All rights reserved.
 
 #pragma once
 
@@ -20,4 +20,5 @@ public:
 
 	virtual void CustomizeChildren(TSharedRef<IPropertyHandle> InStructPropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& StructCustomizationUtils) override;
 
+	void OnPropertyChanged(TSharedPtr<IPropertyUtilities> Utils);
 };

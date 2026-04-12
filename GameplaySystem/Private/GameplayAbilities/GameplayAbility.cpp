@@ -1,12 +1,13 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "GameplayAbility.h"
 
 #include "GameplaySystemComponent.h"
 #include "DevelopmentTypes.h"
-#include "Engine/Texture2D.h"
 #include "GameplayAbilitySlot.h"
+#include "GameplayTasks/GameplayAbilityTask.h"
+#include "GameplayTasksComponent.h"
 
 using namespace DebugTypes;
 
@@ -23,10 +24,8 @@ FActiveGameplayAbility::FActiveGameplayAbility(UGameplayAbility* BaseAbility, FG
 
 	ElapsedTime = 0.0f;
 
-	Duration = BaseAbility->GetDuration();
 	Cooldown = BaseAbility->GetCooldown();
 
-	bHasDurationElapsed = false;
 	bHasCooldownElapsed = false;
 
 	AbilityTags = BaseAbility->GetAbilityTags();
@@ -35,15 +34,6 @@ FActiveGameplayAbility::FActiveGameplayAbility(UGameplayAbility* BaseAbility, FG
 void FActiveGameplayAbility::Tick(float DeltaTime, UGameplaySystemComponent* GameplaySystem)
 {
 	ElapsedTime += DeltaTime;
-
-	if (!bHasDurationElapsed && bHasActivated)
-	{
-		if (ElapsedTime >= Duration)
-		{
-			bHasDurationElapsed = true;
-			GameplaySystem->EndAbility(Handle);
-		}
-	}
 
 	if (!bHasCooldownElapsed && bHasActivated)
 	{
@@ -64,36 +54,9 @@ float FActiveGameplayAbility::GetRemainingCooldown() const
 	return FMath::Clamp(Cooldown - ElapsedTime, GameplayAbilityConstants::NO_COOLDOWN, FLT_MAX);
 }
 
-float FActiveGameplayAbility::GetRemainingDuration() const
-{
-	if (bHasDurationElapsed == true)
-	{
-		return GameplayAbilityConstants::NO_DURATION;
-	}
-
-	return FMath::Clamp(Duration - ElapsedTime, GameplayAbilityConstants::NO_DURATION, FLT_MAX);
-}
-
 float FActiveGameplayAbility::GetRemainingCooldownAsPercentage() const
 {
 	return GetRemainingCooldown() / Cooldown;
-}
-
-float FActiveGameplayAbility::GetRemainingDurationAsPercentage() const
-{
-	return GetRemainingDuration() / Duration;
-}
-
-void FActiveGameplayAbility::SetDuration(float Value)
-{
-	Duration = Value;
-
-	ensure(Ability);
-
-	if (Ability->bForceSameDurationAndCooldown)
-	{
-		Cooldown = Value;
-	}
 }
 
 void FActiveGameplayAbility::SetCooldown(float Value)
@@ -101,11 +64,6 @@ void FActiveGameplayAbility::SetCooldown(float Value)
 	Cooldown = Value;
 
 	ensure(Ability);
-
-	if (Ability->bForceSameDurationAndCooldown)
-	{
-		Duration = Value;
-	}
 }
 
 bool FActiveGameplayAbility::IsAbilityActive() const
@@ -149,12 +107,17 @@ FString FActiveGameplayAbility::ToString() const
 	}
 
 	FString DisplayInfo = Ability->GetDisplayName() + TEXT(":") + ENDL;
-	DisplayInfo += FString::Printf(TEXT("Duration Rmng: %.1f"), GetRemainingDuration()) + FString::Printf(TEXT(", Cooldown: %.1f"), GetRemainingCooldown());
+	DisplayInfo += FString::Printf(TEXT(", Cooldown: %.1f"), GetRemainingCooldown());
 	DisplayInfo += FString::Printf(TEXT(", Ended: %s, Cancel: %s"), Ability->bHasEnded ? TEXT("true") : TEXT("false"), Ability->bHasCancelled ? TEXT("true") : TEXT("false")) + ENDL;
 
 	for (const auto& GameplayTag : AbilityTags.GetGameplayTagArray())
 	{
-		DisplayInfo += GameplayTag.ToString() + ENDL;
+		DisplayInfo += SPACER + GameplayTag.ToString() + ENDL;
+	}
+
+	for (const auto& GameplayTask : Ability->ActiveTasks)
+	{
+		DisplayInfo += GameplayTask->GetDebugString() + ENDL;
 	}
 
 	return DisplayInfo;
@@ -168,12 +131,17 @@ FString FActiveGameplayAbility::ToStringWithDebugTags() const
 	}
 
 	FString DisplayInfo = TextTag_Highlight + Ability->GetDisplayName() + TEXT(":") + TextTag_End + ENDL;
-	DisplayInfo += FString::Printf(TEXT("Duration Rmng: %.1f"), GetRemainingDuration()) + FString::Printf(TEXT(", Cooldown: %.1f"), GetRemainingCooldown());
+	DisplayInfo += FString::Printf(TEXT("Cooldown: %.1f"), GetRemainingCooldown());
 	DisplayInfo += FString::Printf(TEXT(", Ended: %s, Cancel: %s"), Ability->bHasEnded ? TEXT("true") : TEXT("false"), Ability->bHasCancelled ? TEXT("true") : TEXT("false")) + ENDL;
 
 	for (const auto& GameplayTag : AbilityTags.GetGameplayTagArray())
 	{
-		DisplayInfo += GameplayTag.ToString() + ENDL;
+		DisplayInfo += SPACER + GameplayTag.ToString() + ENDL;
+	}
+
+	for (const auto& GameplayTask : Ability->ActiveTasks)
+	{
+		DisplayInfo += GameplayTask->GetDebugString() + ENDL;
 	}
 
 	return DisplayInfo;
@@ -181,8 +149,6 @@ FString FActiveGameplayAbility::ToStringWithDebugTags() const
 
 UGameplayAbility::UGameplayAbility()
 {
-	CurateProperties();
-
 	auto IsFunctionImplementedInBlueprint = [](const UFunction* Func) -> bool
 		{
 			return Func && ensure(Func->GetOuter()) && Func->GetOuter()->IsA(UBlueprintGeneratedClass::StaticClass());
@@ -206,7 +172,6 @@ void UGameplayAbility::PostEditChangeProperty(FPropertyChangedEvent& PropertyCha
 {
 	Super::PostEditChangeProperty(PropertyChangedEvent);
 
-	CurateProperties();
 }
 #endif
 
@@ -225,6 +190,46 @@ UWorld* UGameplayAbility::GetWorld() const
 void UGameplayAbility::FinishDestroy()
 {
 	Super::FinishDestroy();
+}
+
+UGameplayTasksComponent* UGameplayAbility::GetGameplayTasksComponent(const UGameplayTask& Task) const
+{
+	return OwningComponent.Get();
+}
+
+AActor* UGameplayAbility::GetGameplayTaskOwner(const UGameplayTask* Task) const
+{
+	return OwningActor.Get();
+}
+
+AActor* UGameplayAbility::GetGameplayTaskAvatar(const UGameplayTask* Task) const
+{
+	return OwningActor.Get();
+}
+
+void UGameplayAbility::OnGameplayTaskInitialized(UGameplayTask& Task)
+{
+	UGameplayAbilityTask* AbilityTask = Cast<UGameplayAbilityTask>(&Task);
+
+	if (AbilityTask)
+	{
+		AbilityTask->SetGameplaySystemComponent(OwningComponent.Get());
+		AbilityTask->SetGameplayAbility(this);
+	}
+}
+
+void UGameplayAbility::OnGameplayTaskActivated(UGameplayTask& Task)
+{
+	GS_LOG(Log, TEXT("GameplayAbility Task Started: %s"), *Task.GetName());
+
+	ActiveTasks.Add(&Task);
+}
+
+void UGameplayAbility::OnGameplayTaskDeactivated(UGameplayTask& Task)
+{
+	GS_LOG(Log, TEXT("GameplayAbility Task Ended: %s"), *Task.GetName());
+
+	ActiveTasks.Remove(&Task);
 }
 
 void UGameplayAbility::Init(AActor* Actor, UGameplaySystemComponent* Component)
@@ -253,6 +258,11 @@ UGameplaySystemComponent* UGameplayAbility::GetOwningComponent_Checked() const
 {
 	check(OwningComponent.IsValid())
 	return OwningComponent.Get();
+}
+
+FGameplayAbilityHandle UGameplayAbility::GetAbilityHandle() const
+{
+	return OwningComponent.Get() ? OwningComponent->GetAbilityHandleFromInstance(this) : FGameplayAbilityHandle();
 }
 
 bool UGameplayAbility::TryCommitActivateAbility(const FGameplayAbilityActivationData& ActivationData, FActiveGameplayAbility& ActiveGameplayAbility)
@@ -373,39 +383,13 @@ void UGameplayAbility::TryActivateAbility(const FGameplayAbilityActivationData& 
 
 bool UGameplayAbility::TryEndAbility()
 {
-	if (IsStaticInstance())
+	bool bCanBeStopped = StopAbility(false /* Cancelled */);
+	if (!bCanBeStopped)
 	{
-		GA_LOG(Warning, TEXT("GameplayAbility: Tried to end Ability %s that has a EInstancingPolicy::NoLifetime. Static Abilities can not be ended."), *GetDisplayName());
 		return false;
 	}
 
-	if (bHasCancelled)
-	{
-		// We might have been cancelled before ending naturally.
-		return false;
-	}
-
-	if (bHasEnded)
-	{
-		GA_LOG(Error, TEXT("GameplayAbility: Attempting to end an already ended ability!"));
-		return false;
-	}
-
-	if (!bIsActive)
-	{
-		GA_LOG(Warning, TEXT("GameplayAbility: Attempting to end an ability that has not activated yet!"));
-		return false;
-	}
-
-	bIsActive = false;
-	bHasEnded = true;
-
-	GA_LOG(Log, TEXT("Ability: %s was ended."), *GetDisplayName());
-
-	UGameplaySystemComponent* GameplaySystem = GetOwningComponent_Checked();
-	GameplaySystem->InformAbilityEnded(this);
-
-	TryApplyAbilityEndedModifiers();
+	OnAbilityEndedDelegate.Broadcast(this);
 
 	EndAbility();
 	K2_EndAbility();
@@ -415,41 +399,19 @@ bool UGameplayAbility::TryEndAbility()
 
 bool UGameplayAbility::TryCancelAbility(bool bIsAuthoritative)
 {
-	if (IsStaticInstance())
-	{
-		GA_LOG(Warning, TEXT("GameplayAbility: Tried to cancel Ability %s that has a EInstancingPolicy::NoLifetime. Static Abilities are not cancellable."), *GetDisplayName());
-		return false;
-	}
-
-	if (bHasCancelled || bHasEnded)
-	{
-		GA_LOG(Error, TEXT("GameplayAbility: Attempting to cancel an already cancelled or ended ability!"));
-		return false;
-	}
-
 	// Not allowed to cancel it
 	if (!bIsAuthoritative && !IsCancellable())
 	{
 		return false;
 	}
 
-	bIsActive = false;
-	bHasCancelled = true;
-	
-	GA_LOG(Log, TEXT("Ability: %s was cancelled."), *GetDisplayName());
-
-	UGameplaySystemComponent* GameplaySystem = GetOwningComponent_Checked();
-	GameplaySystem->InformAbilityEnded(this);
-
-	TryApplyAbilityEndedModifiers();
-
-	if (bRemoveCooldownWhenCancelled)
+	bool bCanBeStopped = StopAbility(true /* Cancelled */);
+	if (!bCanBeStopped)
 	{
-		FActiveGameplayAbility* ActiveAbility = GameplaySystem->GetActiveAbilityFromInstance_Ptr(this);
-		check(ActiveAbility);
-
-		ActiveAbility->SetCooldown(0.0f);
+		return false;
 	}
+
+	OnAbilityCancelledDelegate.Broadcast();
 
 	CancelAbility();
 	K2_CancelAbility();
@@ -492,14 +454,34 @@ bool UGameplayAbility::TryRemoveAbilityEndedModifiers()
 	return true;
 }
 
+void UGameplayAbility::NotifyAbilityTaskWaitingOnAvatar(UGameplayAbilityTask* AbilityTask)
+{
+	// TODO: If we ever plan on supporting the ability to change Avatar actor with an active GameplayAbility or GameplaySystem, we would
+	// need to stop tasks and abilities without an valid Avatar here.
+}
+
+void UGameplayAbility::EndAbilityState(FName StateToEnd)
+{
+	OnAbilityStateEndedDelegate.Broadcast(StateToEnd);
+}
+
+void UGameplayAbility::EndAbilityFromSelf()
+{
+	UGameplaySystemComponent* Component = GetOwningComponent_Checked();
+	FGameplayAbilityHandle Handle = Component->GetAbilityHandleFromInstance(this);
+	Component->EndAbility(Handle);
+}
+
+void UGameplayAbility::CancelAbilityFromSelf(bool bIsAuthorative)
+{
+	UGameplaySystemComponent* Component = GetOwningComponent_Checked();
+	FGameplayAbilityHandle Handle = Component->GetAbilityHandleFromInstance(this);
+	Component->CancelAbility(Handle, bIsAuthorative);
+}
+
 float UGameplayAbility::GetCooldown() const
 {
 	return Cooldown;
-}
-
-float UGameplayAbility::GetDuration() const
-{
-	return Duration;
 }
 
 bool UGameplayAbility::IsCancellable() const
@@ -517,6 +499,12 @@ void UGameplayAbility::SetIsCancellable(bool bInIsCancellable)
 	bIsCancellable = bInIsCancellable;
 }
 
+bool UGameplayAbility::IsActive() const
+{
+	const bool bResult = bIsActive && !bHasEnded && !bHasCancelled;
+	return bResult;
+}
+
 const FGameplayTagContainer& UGameplayAbility::GetAbilityTags() const
 {
 	return AbilityTags;
@@ -530,7 +518,7 @@ EInstancingPolicy UGameplayAbility::GetInstancingPolicy() const
 FString UGameplayAbility::ToString() const
 {
 	FString DisplayInfo = TEXT("Ability: ") + GetDisplayName() + ENDL;
-	DisplayInfo += FString::Printf(TEXT("Duration: %.2f, Cooldown : %.2f"), Duration, Cooldown);
+	DisplayInfo += FString::Printf(TEXT("Cooldown : %.2f"), Cooldown);
 
 	return DisplayInfo;
 }
@@ -538,7 +526,7 @@ FString UGameplayAbility::ToString() const
 FString UGameplayAbility::ToStringWithDebugTags() const
 {
 	FString DisplayInfo = TEXT("Ability: ") + TextTag_Highlight + GetDisplayName() + TextTag_End + ENDL;
-	DisplayInfo += FString::Printf(TEXT("Duration: %.2f, Cooldown : %.2f"), Duration, Cooldown);
+	DisplayInfo += FString::Printf(TEXT("Cooldown : %.2f"), Cooldown);
 	
 	return DisplayInfo;
 }
@@ -547,6 +535,32 @@ FString UGameplayAbility::GetDisplayName() const
 {
 	return DisplayName;
 }
+
+float UGameplayAbility::GetDeltaTimeCoefficient() const
+{
+	if (AActor* Owner = GetOwningActor())
+	{
+		return Owner->CustomTimeDilation;
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		return World->GetWorldSettings()->GetEffectiveTimeDilation();
+	}
+
+	return 1.0f;
+}
+
+FGameplaySystemActorInfo* UGameplayAbility::GetCurrentActorInfo() const
+{
+	if (UGameplaySystemComponent* Component = GetOwningComponent())
+	{
+		return Component->GetActorInfo();
+	}
+
+	return nullptr;
+}
+
 
 bool UGameplayAbility::CheckAbilityRequirements(const FGameplayAbilityActivationData& ActivationData) const
 {
@@ -596,10 +610,81 @@ bool UGameplayAbility::IsAnimatingAbility() const
 	return GameplaySystem->GetAnimatingAbility() == this;
 }
 
-void UGameplayAbility::CurateProperties()
+bool UGameplayAbility::StopAbility(bool bIsCancelled)
 {
-	if (bForceSameDurationAndCooldown)
+	if (IsStaticInstance())
 	{
-		Cooldown = Duration;
+		GA_LOG(Warning, TEXT("GameplayAbility: Tried to end Ability %s that has a EInstancingPolicy::NoLifetime. Static Abilities can not be ended."), *GetDisplayName());
+		return false;
 	}
+
+	if (bHasCancelled)
+	{
+		if (bIsCancelled)
+		{
+			GA_LOG(Error, TEXT("GameplayAbility: Attempting to cancel an already cancelled ability!"));
+		}
+
+		return false;
+	}
+
+	if (bHasEnded)
+	{
+		if (!bIsCancelled)
+		{
+			GA_LOG(Error, TEXT("GameplayAbility: Attempting to end an already ended ability!"));
+
+		}
+
+		return false;
+	}
+
+	if (!bIsActive)
+	{
+		GA_LOG(Warning, TEXT("GameplayAbility: Attempting to end an ability that has not activated yet!"));
+		return false;
+	}
+
+	bIsActive = false;
+
+	UGameplaySystemComponent* GameplaySystem = GetOwningComponent_Checked();
+
+	// Tell all our tasks that we are finished and they should cleanup
+	for (int32 TaskIndex = ActiveTasks.Num() - 1; TaskIndex >= 0 && ActiveTasks.Num() > 0; --TaskIndex)
+	{
+		UGameplayTask* Task = ActiveTasks[TaskIndex];
+		if (Task)
+		{
+			Task->TaskOwnerEnded();
+		}
+	}
+	ActiveTasks.Reset();
+
+	if (bIsCancelled)
+	{
+		bHasCancelled = true;
+
+		if (bRemoveCooldownWhenCancelled)
+		{
+			FActiveGameplayAbility* ActiveAbility = GameplaySystem->GetActiveAbilityFromInstance_Ptr(this);
+			check(ActiveAbility);
+
+			ActiveAbility->SetCooldown(0.0f);
+		}
+
+		GA_LOG(Log, TEXT("Ability: %s was cancelled."), *GetDisplayName());
+	}
+	else // Ended
+	{
+		bHasEnded = true;
+
+		GA_LOG(Log, TEXT("Ability: %s was ended."), *GetDisplayName());
+	}
+
+	// Call this after ending tasks since it clears the AnimMontageInfo for the GameplaySystem
+	GameplaySystem->InformAbilityEnded(this);
+
+	TryApplyAbilityEndedModifiers();
+
+	return true;
 }

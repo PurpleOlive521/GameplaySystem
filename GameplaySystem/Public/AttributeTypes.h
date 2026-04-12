@@ -1,9 +1,20 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "AttributeTypes.generated.h"
+
+UENUM(BlueprintType)
+enum class EAttributeValue : uint8
+{
+	// The attribute unaffected by temporary modifiers like GameplayEffects.
+	EAV_BaseValue			UMETA(DisplayName = "Base Value"),
+
+	// The attribute with temporary modifiers like GameplayEffects applied.
+	// Recalculated frequently so direct modifications to this value are transient.
+	EAV_CurrentValue		UMETA(DisplayName = "Current Value"),
+};
 
 UENUM(BlueprintType)
 enum class EAttributeType : uint8

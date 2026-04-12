@@ -1,9 +1,8 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "DebugPageWidget.h"
 #include "GameplaySystemDebugWidget.h"
-
 
 UDebugPageWidget::UDebugPageWidget(const FObjectInitializer& ObjectInitializer) : Super(ObjectInitializer)
 {

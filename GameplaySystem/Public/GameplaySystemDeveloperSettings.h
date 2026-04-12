@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
@@ -12,8 +12,8 @@ struct FAttributeConfiguration
 {
 	GENERATED_BODY()
 
-	UPROPERTY(EditAnywhere)
 	// The Attribute used as a value roof for this Attribute.
+	UPROPERTY(EditAnywhere)
 	EAttributeType MaxValueReference = EAttributeType::EAT_NONE;
 
 	// When the MaxValueReference is increased, scale this Attribute up too to keep the values proportional. 
@@ -21,8 +21,8 @@ struct FAttributeConfiguration
 	UPROPERTY(EditAnywhere)
 	bool bScaleWithMaxValue = false;
 
-	UPROPERTY(EditAnywhere)
 	// If true, the Attribute can not have a value lower than 0.
+	UPROPERTY(EditAnywhere)
 	bool bIsUnsigned = false;
 };
 

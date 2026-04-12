@@ -1,11 +1,10 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 
-// --- Optional include meant for module-wide utility macros and types.
-
+// --- Collection of helper macros and types
 
 DECLARE_LOG_CATEGORY_EXTERN(LogGameplaySystem, Log, All)
 
@@ -21,7 +20,18 @@ DECLARE_LOG_CATEGORY_EXTERN(LogGameplaySystem, Log, All)
 
 #define ENDL TEXT("\n")
 
+// One tab-in length
+#define SPACER TEXT("    ")
+
 #define ensureNoEntry() ensureMsgf(false, TEXT("This code path should never be executed."));
+
+// Early return if Super::Signature call fails.
+#define FAIL_ON_FAILED_SUPER(Signature)			\
+if(!Super::Signature)						\
+{											\
+	return false;							\
+}											\
+
 
 // A collection of text tags for use in debug strings, wrapped in the appropriate RichText format.
 // Define the colors in a RichTagTable to use the colors for more readable debug text.

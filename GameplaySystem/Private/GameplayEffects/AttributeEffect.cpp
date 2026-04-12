@@ -1,4 +1,4 @@
-// Copyright (c) 2025, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 
 #include "AttributeEffect.h"
@@ -14,7 +14,7 @@ FAttributeEffect::FAttributeEffect(EAttributeType AttributeType, float Value, EE
 	this->Target = Target;
 }
 
-bool FAttributeEffect::ApplyAttributeEffect(FAttribute& AffectedAttribute)
+bool FAttributeEffect::ApplyAttributeEffect(FAttribute& AffectedAttribute, bool bResetBonusValue)
 {
 	if(AffectedAttribute.AttributeType != Attribute)
 	{
@@ -24,100 +24,96 @@ bool FAttributeEffect::ApplyAttributeEffect(FAttribute& AffectedAttribute)
 
 	float Magnitude = 0.0f;
 
+	// Non-instant effects wan't this value replaced and not incremented.
+	if (bResetBonusValue)
+	{
+		BonusValue = 0.0f;
+	}
+
 	switch (ApplicationType)
 	{
 
-		case EEffectApplicationType::EEAT_Addition:
+	case EEffectApplicationType::EEAT_Addition:
 
-			if (Target == ETargetValue::ETV_BaseValue) 
-			{
-				Magnitude = Value;
+		if (Target == ETargetValue::ETV_BaseValue) 
+		{
+			Magnitude = Value;
 
-				AffectedAttribute.BaseValue += Magnitude;
-				AffectedAttribute.CurrentValue += Magnitude;
+			AffectedAttribute.BaseValue += Magnitude;
+			AffectedAttribute.CurrentValue += Magnitude;
 
-			}
-			else
-			{
-				Magnitude = Value;
+		}
+		else
+		{
+			Magnitude = Value;
 
-				AffectedAttribute.CurrentValue += Magnitude;
-			}
+			AffectedAttribute.CurrentValue += Magnitude;
+		}
 
-			BonusValue = Magnitude;
+		break;
 
-			break;
+		// When multiplying and dividing, only the 'Bonus' or change in value is added. This is an intentional decision to avoid exponential growth, and to keep the system more predictable.
+	case EEffectApplicationType::EEAT_Multiplication:
 
-			// When multiplying and dividing, only the 'Bonus' or change in value is added. This is an intentional decision to avoid exponential growth, and to keep the system more predictable.
-		case EEffectApplicationType::EEAT_Multiplication:
+		if (Target == ETargetValue::ETV_BaseValue)
+		{
+			Magnitude = (AffectedAttribute.BaseValue * Value) - AffectedAttribute.BaseValue;
 
-			if (Target == ETargetValue::ETV_BaseValue)
-			{
-				Magnitude = (AffectedAttribute.BaseValue * Value) - AffectedAttribute.BaseValue;
+			AffectedAttribute.BaseValue += Magnitude;
+			AffectedAttribute.CurrentValue += Magnitude;
+		}
+		else
+		{
+			Magnitude = (AffectedAttribute.CurrentValue * Value) - AffectedAttribute.CurrentValue;
 
-				AffectedAttribute.BaseValue += Magnitude;
-				AffectedAttribute.CurrentValue += Magnitude;
-			}
-			else
-			{
-				Magnitude = (AffectedAttribute.CurrentValue * Value) - AffectedAttribute.CurrentValue;
+			AffectedAttribute.CurrentValue += Magnitude;
+		}
 
-				AffectedAttribute.CurrentValue += Magnitude;
-			}
+		break;
 
-			BonusValue = Magnitude;
+		// See comment on EEAT_Multiplication above
+	case EEffectApplicationType::EEAT_Division:
 
-			break;
+		if (Target == ETargetValue::ETV_BaseValue)
+		{
+			Magnitude = AffectedAttribute.BaseValue - (AffectedAttribute.BaseValue / Value);
 
-			// See comment on EEAT_Multiplication above
-		case EEffectApplicationType::EEAT_Division:
+			AffectedAttribute.BaseValue -= Magnitude;
+			AffectedAttribute.CurrentValue -= Magnitude;
+		}
+		else
+		{
+			Magnitude = AffectedAttribute.CurrentValue - (AffectedAttribute.CurrentValue / Value);
 
-			if (Target == ETargetValue::ETV_BaseValue)
-			{
-				Magnitude = AffectedAttribute.BaseValue - (AffectedAttribute.BaseValue / Value);
+			AffectedAttribute.CurrentValue -= Magnitude;
+		}
 
-				AffectedAttribute.BaseValue -= Magnitude;
-				AffectedAttribute.CurrentValue -= Magnitude;
-			}
-			else
-			{
-				Magnitude = AffectedAttribute.CurrentValue - (AffectedAttribute.CurrentValue / Value);
+		break;
 
-				AffectedAttribute.CurrentValue -= Magnitude;
-			}
+		// Replaces the value with the Effect value
+	case EEffectApplicationType::EEAT_Override:
 
-			BonusValue = Magnitude;
+		if (Target == ETargetValue::ETV_BaseValue)
+		{
+			Magnitude = Value - AffectedAttribute.BaseValue;
 
-			break;
+			AffectedAttribute.BaseValue = Value;
+			AffectedAttribute.CurrentValue = Value;
+		}
+		else
+		{
+			Magnitude = Value - AffectedAttribute.CurrentValue;
+			AffectedAttribute.CurrentValue = Value;
+		}
 
-			// Replaces the value with the Effect value
-		case EEffectApplicationType::EEAT_Override:
+		break;
 
-			if (Target == ETargetValue::ETV_BaseValue)
-			{
-				Magnitude = Value - AffectedAttribute.BaseValue;
-
-				AffectedAttribute.BaseValue = Value;
-				AffectedAttribute.CurrentValue = Value;
-			}
-			else
-			{
-				Magnitude = Value - AffectedAttribute.CurrentValue;
-				AffectedAttribute.CurrentValue = Value;
-			}
-
-			BonusValue = Magnitude;
-
-			break;
-
-			// Error prevention
-		default:
-			GS_LOG(Error, TEXT("AttributeEffect: Error - Effect Application Type not supported"));
-
-			return false;
-			break;
+	default:
+		checkNoEntry(); // Not supported yet.
+		return false;
 	}
 
+	BonusValue += Magnitude;
 
 	return true;
 }
@@ -174,12 +170,9 @@ bool FAttributeEffect::RemoveAttributeEffect(FAttribute& AffectedAttribute)
 		}
 		break;
 
-		// Error prevention
 	default:
-		GS_LOG(Error, TEXT("AttributeEffect: Error - Effect Application Type not supported"));
-
+		checkNoEntry(); // Not supported yet.
 		return false;
-		break;
 	}
 
 	return true;
