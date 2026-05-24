@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -46,5 +46,6 @@ struct GAMEPLAYSYSTEM_API FAttribute
 	float BaseValue = 0;
 
 	// This value is volatile - for permanent changes, use BaseValue
+	UPROPERTY(SaveGame)
 	float CurrentValue = 0;
 };

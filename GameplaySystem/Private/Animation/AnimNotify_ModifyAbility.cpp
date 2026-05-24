@@ -1,5 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
-
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "Animation/AnimNotify_ModifyAbility.h"
@@ -7,6 +6,13 @@
 #include "GameplaySystemComponent.h"
 #include "GameplaySystemOwnerInterface.h"
 #include "DevelopmentTypes.h"
+
+UAnimNotify_ModifyAbility::UAnimNotify_ModifyAbility()
+{
+#if WITH_EDITORONLY_DATA
+	bShouldFireInEditor = false;
+#endif //WITH_EDITORONLY_DATA
+}
 
 void UAnimNotify_ModifyAbility::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference)
 {
@@ -24,7 +30,8 @@ void UAnimNotify_ModifyAbility::Notify(USkeletalMeshComponent* MeshComp, UAnimSe
 		}
 
 		// Ensure that the ability we are modifying is the one that started the montage that triggered this AnimNotify.
-		UGameplayAbility* AnimatingAbility = GameplaySystem->GetAnimatingAbility();
+		const FName Group = UGameplaySystemComponent::GetGroupForAnimation(Animation);
+		UGameplayAbility* AnimatingAbility = GameplaySystem->GetAnimatingAbility(Group);
 
 		if (!AnimatingAbility)
 		{
@@ -32,7 +39,7 @@ void UAnimNotify_ModifyAbility::Notify(USkeletalMeshComponent* MeshComp, UAnimSe
 			return;
 		}
 
-		if (!GameplaySystem->GetAnimMontageInfo()->IsActiveMontage(Cast<UAnimMontage>(Animation)))
+		if (!GameplaySystem->GetAnimMontageInfo()->IsActiveMontage(Group, Animation))
 		{
 		
 			GS_LOG(Warning, TEXT("AnimNotify_ModifyAbility was triggered by an animation that is not responsible for animating in AnimMontageInfo. No properties were modified."));
@@ -82,10 +89,3 @@ void UAnimNotify_ModifyAbility::Notify(USkeletalMeshComponent* MeshComp, UAnimSe
 		AbilityTags.FillParentTags();
 	}
 }
-
-#if WITH_EDITOR
-bool UAnimNotify_ModifyAbility::ShouldFireInEditor()
-{
-	return false;
-}
-#endif

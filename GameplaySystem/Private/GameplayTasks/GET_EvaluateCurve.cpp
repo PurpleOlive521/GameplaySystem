@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayTasks/GET_EvaluateCurve.h"
@@ -10,12 +10,17 @@ UGET_EvaluateCurve::UGET_EvaluateCurve(const FObjectInitializer& ObjectInitializ
 	bTickingTask = true;
 }
 
-UGET_EvaluateCurve* UGET_EvaluateCurve::EvaluateCurve(EEvaluatorPlayTypePins PlayType, UGameplayEvent* OwningEvent, UCurveFloat* InCurve, bool bAlwaysEvaluateLastKey, float EndTime)
+UGET_EvaluateCurve* UGET_EvaluateCurve::EvaluateCurve(EEvaluatorPlayTypePins PlayType, UGameplayEvent* OwningEvent, UCurveFloat* InCurve, bool bAlwaysEvaluateLastKey, bool bScaleToEndTime, float EndTime)
 {
 	UGET_EvaluateCurve* NewTask = NewEventTask<UGET_EvaluateCurve>(OwningEvent);
-	NewTask->Curve = InCurve;
+
+	FLatentCurveEvaluatorParams Params;
+	Params.Curve = InCurve;
+	Params.EndTime = EndTime;
+	Params.bScaleToEndTime = bScaleToEndTime;
+
+	NewTask->Params = Params;
 	NewTask->bAlwaysEvaluateLastKey = bAlwaysEvaluateLastKey;
-	NewTask->EndTime = EndTime;
 	NewTask->PlayType = PlayType;
 
 	return NewTask;
@@ -23,7 +28,7 @@ UGET_EvaluateCurve* UGET_EvaluateCurve::EvaluateCurve(EEvaluatorPlayTypePins Pla
 
 void UGET_EvaluateCurve::Activate()
 {
-	if (!Curve)
+	if (!Params.Curve)
 	{
 		EndTask();
 		return;
@@ -31,13 +36,10 @@ void UGET_EvaluateCurve::Activate()
 
 	Event->OnEventAbortedDelegate.AddUObject(this, &UGET_EvaluateCurve::OnGameplayEventAborted);
 
-	FOnEvaluateSignature UpdateDelegate;
-	UpdateDelegate.BindDynamic(this, &UGET_EvaluateCurve::OnCurveEvaluated);
+	Params.OnEvaluateDelegate.BindDynamic(this, &UGET_EvaluateCurve::OnCurveEvaluated);
+	Params.OnFinishedDelegate.BindDynamic(this, &UGET_EvaluateCurve::OnCurveFinished);
 
-	FOnFinishedSignature FinishedDelegate;
-	FinishedDelegate.BindDynamic(this, &UGET_EvaluateCurve::OnCurveFinished);
-
-	Evaluator = ULatentCurveEvaluatorBlueprintLibrary::CreateLatentCurveEvaluator(Curve, this, UpdateDelegate, FinishedDelegate, EndTime, false /* bEvaluteWhenPaused */);
+	Evaluator = ULatentCurveEvaluatorBlueprintLibrary::CreateLatentCurveEvaluator(this, Params);
 	ensure(Evaluator);
 
 	// We will take over ticking to ensure it matches our owning Events tick.
@@ -63,7 +65,7 @@ void UGET_EvaluateCurve::ExternalCancel()
 
 FString UGET_EvaluateCurve::GetDebugString() const
 {
-	return FString::Printf(TEXT("EvaluateCurve: %s"), *GetNameSafe(Curve));
+	return FString::Printf(TEXT("EvaluateCurve: %s"), *GetNameSafe(Params.Curve));
 }
 
 void UGET_EvaluateCurve::OnCurveEvaluated(float Value)

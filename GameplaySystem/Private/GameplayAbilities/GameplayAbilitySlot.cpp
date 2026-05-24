@@ -1,9 +1,8 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayAbilitySlot.h"
 #include "Kismet/GameplayStatics.h"
-
 
 void FGameplayAbilitySlot::Init(FGameplayAbilitySlotContainer* Owner, const FGameplayTag& InSlotTag)
 {
@@ -19,7 +18,7 @@ void FGameplayAbilitySlot::Init(FGameplayAbilitySlotContainer* Owner, const FGam
 	}
 }
 
-bool FGameplayAbilitySlot::ActivateAbility()
+bool FGameplayAbilitySlot::ActivateAbility(const FGameplayAbilityActivationData& ActivationData)
 {
 	if (!Ability)
 	{
@@ -28,11 +27,13 @@ bool FGameplayAbilitySlot::ActivateAbility()
 	}
 
 	UGameplaySystemComponent* GameplaySystem = GetGameplaySystemComponent();
-	const bool bActivated = GameplaySystem->UseAbility(Ability, AbilityHandle);
+	const bool bActivated = GameplaySystem->UseAbility_ActivationData(Ability, ActivationData, AbilityHandle);
 
 	if (bActivated)
 	{
-		OwningContainer->OnAbilityActivatedDelegate.Broadcast(Ability, SlotTag);
+		OwningContainer->OnSlotAbilityActivatedDelegate.Broadcast(Ability, SlotTag);
+
+		BindToAbility();
 	}
 
 	return bActivated;
@@ -47,6 +48,8 @@ void FGameplayAbilitySlot::SetAbility(TSubclassOf<UGameplayAbility> InAbility)
 		return;
 	}
 
+	UnbindFromAbility();
+
 	UGameplaySystemComponent* GameplaySystem = OwningContainer->GetGameplaySystem();
 	GameplaySystem->RemoveAbilityInstance(Ability);
 
@@ -55,7 +58,7 @@ void FGameplayAbilitySlot::SetAbility(TSubclassOf<UGameplayAbility> InAbility)
 	// We assume that this ability is new to the system
 	GameplaySystem->AddAbilityInstance(Ability);
 
-	OwningContainer->OnAbilitySwitchedDelegate.Broadcast(Ability);
+	OwningContainer->OnSlotAbilitySwitchedDelegate.Broadcast(Ability);
 }
 
 float FGameplayAbilitySlot::GetCurrentCooldown() const
@@ -84,32 +87,17 @@ float FGameplayAbilitySlot::GetCurrentCooldownAsPercentage() const
 	return ActiveAbility->GetRemainingCooldownAsPercentage();
 }
 
-float FGameplayAbilitySlot::GetCurrentDuration() const
+bool FGameplayAbilitySlot::IsAbilityActive() const
 {
 	UGameplaySystemComponent* GameplaySystem = OwningContainer->GetGameplaySystem();
 	FActiveGameplayAbility* ActiveAbility = GameplaySystem->GetActiveAbilityFromHandle_Ptr(AbilityHandle);
 
-	if (!ActiveAbility)
+	if (ActiveAbility)
 	{
-		return 0.0f;
+		return ActiveAbility->IsAbilityActive();
 	}
 
-	// TODO: Fix.
-	return 1.0f;
-}
-
-float FGameplayAbilitySlot::GetCurrentDurationAsPercentage() const
-{
-	UGameplaySystemComponent* GameplaySystem = OwningContainer->GetGameplaySystem();
-	FActiveGameplayAbility* ActiveAbility = GameplaySystem->GetActiveAbilityFromHandle_Ptr(AbilityHandle);
-
-	if (!ActiveAbility)
-	{
-		return 0.0f;
-	}
-
-	// TODO: Fix.
-	return 1.0f;
+	return false;
 }
 
 UGameplaySystemComponent* FGameplayAbilitySlot::GetGameplaySystemComponent() const
@@ -118,25 +106,45 @@ UGameplaySystemComponent* FGameplayAbilitySlot::GetGameplaySystemComponent() con
 	return OwningContainer->GetGameplaySystem();
 }
 
+void FGameplayAbilitySlot::BindToAbility()
+{
+	UGameplaySystemComponent* GameplaySystem = OwningContainer->GetGameplaySystem();
+	UGameplayAbility* AbilityInstance = GameplaySystem->GetAbilityInstanceFromHandle(AbilityHandle);
+
+	AbilityFinishedHandle = AbilityInstance->OnAbilityFinishedDelegate.AddRaw(this, &FGameplayAbilitySlot::OnAbilityFinished);
+}
+
+void FGameplayAbilitySlot::UnbindFromAbility() const
+{
+	if (OwningContainer)
+	{
+		if (UGameplaySystemComponent* GameplaySystem = OwningContainer->GetGameplaySystem())
+		{
+			if (UGameplayAbility* AbilityInstance = GameplaySystem->GetAbilityInstanceFromHandle(AbilityHandle))
+			{
+				AbilityInstance->OnAbilityFinishedDelegate.Remove(AbilityFinishedHandle);
+			}
+		}
+	}
+}
+
+void FGameplayAbilitySlot::OnAbilityFinished(UGameplayAbility* InAbility) const
+{
+	OwningContainer->OnSlotAbilityFinishedDelegate.Broadcast(Ability, SlotTag);	
+}
+
 FGameplayAbilitySlot* FGameplayAbilitySlotContainer::GetSlot(const FGameplayTag& SlotTag)
 {
 	return GameplayAbilitySlotTable.Find(SlotTag);
 }
 
-bool FGameplayAbilitySlotContainer::GetSlotRef(const FGameplayTag& SlotTag, FGameplayAbilitySlot& OutSlot) const
+FGameplayAbilitySlot& FGameplayAbilitySlotContainer::GetSlotRef(const FGameplayTag& SlotTag)
 {
-	if (GameplayAbilitySlotTable.Contains(SlotTag))
-	{
-		OutSlot = GameplayAbilitySlotTable.FindRef(SlotTag);
-		return true;
-	}
-
-	return false;
+	return GameplayAbilitySlotTable.FindChecked(SlotTag);
 }
 
 inline UGameplaySystemComponent* FGameplayAbilitySlotContainer::GetGameplaySystem() const
 {
-	check(GameplaySystem.IsValid())
 	return GameplaySystem.Get();
 }
 

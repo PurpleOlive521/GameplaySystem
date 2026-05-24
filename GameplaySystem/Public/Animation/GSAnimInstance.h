@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -23,8 +23,24 @@ public:
 	virtual EDataValidationResult IsDataValid(class FDataValidationContext& Context) const override;
 #endif // #if WITH_EDITOR
 
+	UFUNCTION()
+	void OnMovementSpeedChanged(EAttributeType Attribute);
+
 protected:
 
 	UPROPERTY(EditDefaultsOnly, Category = "GameplayTags")
 	FGameplayTagBlueprintPropertyMap GameplayTagPropertyMap;
+
+	UPROPERTY(BlueprintReadWrite, Category = "References")
+	TWeakObjectPtr<UGameplaySystemComponent> GameplaySystem = nullptr;
+
+	// The current movement speed. Affected by modifiers such as running.
+	UPROPERTY(BlueprintReadOnly, Category = "Values")
+	float MovementSpeed = 0.0f;
+
+	// Movement speed unaffected by modifiers such as buffs, debuffs and running.
+	// Can be considered the walking speed.
+	UPROPERTY(BlueprintReadOnly, Category = "Values")
+	float BaseMovementSpeed = 0.0f;
+
 };

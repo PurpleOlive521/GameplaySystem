@@ -1,10 +1,17 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "AnimNotifyState_TimedGameplayTag.h"
 
 #include "GameplaySystemComponent.h"
 #include "GameplaySystemOwnerInterface.h"
+
+UAnimNotifyState_TimedGameplayTag::UAnimNotifyState_TimedGameplayTag()
+{
+#if WITH_EDITORONLY_DATA
+	bShouldFireInEditor = false;
+#endif //WITH_EDITORONLY_DATA
+}
 
 void UAnimNotifyState_TimedGameplayTag::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float TotalDuration, const FAnimNotifyEventReference& EventReference)
 {
@@ -50,13 +57,3 @@ void UAnimNotifyState_TimedGameplayTag::NotifyEnd(USkeletalMeshComponent* MeshCo
 		}
 	}
 }
-
-
-#if WITH_EDITOR
-
-bool UAnimNotifyState_TimedGameplayTag::ShouldFireInEditor()
-{
-	return false;
-}
-
-#endif // WITH_EDITOR

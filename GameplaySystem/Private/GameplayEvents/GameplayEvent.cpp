@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayEvent.h"
@@ -102,13 +102,13 @@ void UGameplayEvent::Init(UObject* InOwningObject)
 	}
 }
 
+bool UGameplayEvent::ShouldTick() const
+{
+	return IsActive();
+}
+
 void UGameplayEvent::Tick(float DeltaTime)
 {
-	if (!IsActive())
-	{
-		return;
-	}
-
 	if (bShareOwnerLifetime && !OwningObject.IsValid())
 	{
 		TryAbortEvent();
@@ -222,6 +222,16 @@ bool UGameplayEvent::TryAbortEvent()
 	OnEventAbortedDelegate.Broadcast();
 
 	return true;
+}
+
+void UGameplayEvent::SendEventNotify(FName Notify)
+{
+	if (IsActive()) 
+	{
+		ReceiveEventNotify(Notify);
+
+		K2_ReceiveEventNotify(Notify);
+	}
 }
 
 UObject* UGameplayEvent::GetOwningObject() const
@@ -438,6 +448,7 @@ bool UGameplayEvent::PreTriggerEvent()
 {
 	UGameplayEventSubsystem* EventSubsystem = GetEventSubsystem();
 
+	ApplyBlockingQuery();
 	// --- Enforce End Queries
 
 	if (EndQueryPolicy == EQueryPolicy::EQP_Global)
@@ -562,6 +573,11 @@ void UGameplayEvent::AbortEvent()
 	// Write your custom native abort logic here.
 }
 
+void UGameplayEvent::ReceiveEventNotify(FName Notify)
+{
+
+}
+
 void UGameplayEvent::FinishEvent(bool bTriggerEndCallback)
 {
 	if (bTriggerEndCallback)
@@ -625,6 +641,7 @@ void UGameplayEvent::StopEvent()
 	TickFollowers.Clear();
 	bMarkedForCleanup = true;
 
+	RemoveBlockingQuery();
 	// Tell all our tasks that we are finished and they should cleanup
 	for (int32 TaskIndex = ActiveTasks.Num() - 1; TaskIndex >= 0 && ActiveTasks.Num() > 0; --TaskIndex)
 	{

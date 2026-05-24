@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -14,6 +14,54 @@ class UGameplaySaveGame;
 
 typedef FName LevelName;
 
+UENUM(BlueprintType)
+enum class ESaveGameCondition : uint8
+{
+	// The save file is up to date with game version and contains data.
+	ESGC_Healthy		UMETA(DisplayName = "Healthy"),
+
+	// The save file contains data but is not up to date with game version.
+	ESGC_Outdated		UMETA(DisplayName = "Outdated"),
+
+	// The save file is empty.
+	ESGC_Empty			UMETA(DisplayName = "Empty"),
+
+	// This should never be encountered in game.
+	ESGC_Invalid		UMETA(DisplayName = "Invalid"),
+};
+
+USTRUCT(BlueprintType)
+struct FSaveGameStatus
+{
+	GENERATED_BODY()
+
+	FSaveGameStatus() = default;
+
+	// Fetches properties given a valid World to perform work in.
+	FSaveGameStatus(UWorld* World);
+
+	// Applies some stored properties, such as Playtime.
+	// Player related data is not applied, as it's serialized separately.
+	void ApplyStateOnWorld(UWorld* World);
+
+	inline static FSaveGameStatus MakeEmpty();
+
+	void UpdateConditionFromArchive(FArchive& Archive);
+
+	UPROPERTY(BlueprintReadWrite)
+	int32 PlayerLevel = 1;
+
+	UPROPERTY(BlueprintReadWrite)
+	double Playtime = 0.0;
+
+	UPROPERTY(BlueprintReadWrite)
+	ESaveGameCondition Condition = ESaveGameCondition::ESGC_Invalid;
+
+	// Serialization functions
+	friend void operator<<(class FArchive& Ar, FSaveGameStatus& Status);
+	friend void operator<<(FStructuredArchive::FSlot Slot, FSaveGameStatus& Status);
+};
+
 struct FLevelState
 {
 	FLevelState() = default;
@@ -26,7 +74,12 @@ struct FLevelState
 
 	void Reset();
 
+	// Will invalidate any active iterators and for-loops, use with caution.
+	void RemoveStaleActors();
+
 	bool bIsLoaded = false;
+
+	bool bIsPredictedState = false;
 	
 	// TODO: GlobalData Actors wont be unregistered, since they could be part of any unloading level and would require iterating the actors to check
 	//		 Look into differentiation them further so we can filter them out when unloading sublevels?
@@ -56,6 +109,8 @@ struct FSaveGameState
 
 	void MarkLevelUnloaded(TSoftObjectPtr<UWorld> WorldAsset);
 
+	void AddLevel(LevelName Level, bool bIsLoaded = false);
+
 	void ResetState();
 
 	TMap<LevelName, FLevelState> LevelData;
@@ -80,6 +135,8 @@ namespace LevelUtilities
 	FString GetActorName(AActor* Actor);
 	FName GetActorNameFromSoftObjectPath(const FSoftObjectPath& Path);
 }
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGameLoadedSignature);
 	
 UCLASS()
 class GAMEPLAYSYSTEM_API UGameplayPersistenceSubsystem : public UGameInstanceSubsystem
@@ -95,19 +152,38 @@ public:
 	virtual void Deinitialize() override;
 	// --- End USubSystem Interface
 
+	// Helper getter
+	static UGameplayPersistenceSubsystem* Get(const UObject* WorldContext);
+
 	// Control whether or not saving is allowed.
 	UFUNCTION(BlueprintCallable, Category = "GameplayPersistance")
 	void SetIsSavingAllowed(bool bIsAllowed);
 
-	// Gets the cumulative playtime on the currently used save, in seconds. Sensitive to changes to system time.
+	// Gets the playtime in seconds. Sensitive to changes to system time.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayPersistance")
-	float GetPlayTime();
+	double GetPlaytime();
+
+	UFUNCTION(BlueprintCallable, Category = "GameplayPersistance")
+	void SetPlaytime(double InPlaytime);
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayPersistance")
 	void SaveGame(const FString& SlotName);
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayPersistance")
 	void LoadGame(const FString& SlotName);
+
+	UFUNCTION(BlueprintCallable, Category = "GameplayPersistance")
+	FSaveGameStatus GetSaveGameStatus(const FString& SlotName);
+
+	// Returns true if we are in the process of loading the game.
+	// Does not return true if only loading an individual sublevel.
+	UFUNCTION(BlueprintCallable, Category = "GameplayPersistance")
+	bool IsGameLoadInProgress();
+
+	// This will remove any existing SaveData that we have stored. This does not affect saves that are written to disk.
+	// Use with caution!
+	UFUNCTION(BlueprintCallable, Category = "GameplayPersistance")
+	void ClearData();
 
 protected:
 
@@ -117,7 +193,11 @@ protected:
 
 	void OnWorldBeginTearDown(UWorld* World);
 
+	void OnSublevelLoaded(ULevelStreaming* StreamingObject);
+
 	void OnSublevelLoaded(ULevel* Level, UWorld* World);
+
+	void OnSublevelRemoved(ULevelStreaming* StreamingObject);
 
 	void OnSublevelRemoved(ULevel* Level, UWorld* World);
 
@@ -135,8 +215,9 @@ private:
 
 	bool bIsSavingAllowed = false;
 
-	// Offset used to infer the current playtime when compared to GetRealTime.
-	float RealTimeValueReference = 0.0f;
+	double RealTimeValueTimestamp = 0.0;
+
+	double Playtime = 0.0;
 
 	TSharedPtr<class FSaveGameSerializer, ESPMode::ThreadSafe> CurrentSerializer;
 
@@ -149,4 +230,11 @@ private:
 	FArchiveSectionContainer TextScopeContainer;
 	TArray<uint8> TextData;
 #endif //WITH_TEXT_ARCHIVE_SUPPORT
+
+public:
+
+	// --- Delegates
+	UPROPERTY(BlueprintAssignable, Category = "GameplayPersistance")
+	FOnGameLoadedSignature OnGameLoadedDelegate;
+
 };

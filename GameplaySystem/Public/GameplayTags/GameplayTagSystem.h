@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -8,11 +8,8 @@
 
 #include "GameplayTagSystem.generated.h"
 
-struct FGameplayTagsSaveObject;
-struct FGameplayTagSystemSaveObject;
-
 // Broadcasted when a GameplayTag has it's count modified. Does not mean that the presence of the tag is changed.
-DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnGameplayTagModifiedSignature, FGameplayTag /* GameplayTag */, int /* NewCount */, int /* Delta */);
+DECLARE_MULTICAST_DELEGATE_ThreeParams(FOnGameplayTagModifiedSignature, FGameplayTag /* GameplayTag */, int32 /* NewCount */, int32 /* Delta */);
 
 // Only broadcasted when the presence of a GameplayTag is changed. 
 // bWasAdded being false means the GameplayTag was removed.
@@ -24,14 +21,6 @@ struct GAMEPLAYSYSTEM_API FGameplayTagSystem
 	GENERATED_BODY()
 
 	FGameplayTagSystem();
-
-	// --- Save System
-
-	FGameplayTagSystemSaveObject GetSaveData() const;
-
-	void LoadFromData(const FGameplayTagSystemSaveObject& GameplayTagsSaveData);
-
-	// --- Tags
 
 	// Add one instance of the tag.
 	void AddTag(const FGameplayTag& TagToAdd);
@@ -57,12 +46,14 @@ struct GAMEPLAYSYSTEM_API FGameplayTagSystem
 	bool HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst) const;
 
 	// Get the amount of tags present for a specific type.
-	int GetTagCount(const FGameplayTag& TagToCheck) const;
+	int32 GetTagCount(const FGameplayTag& TagToCheck) const;
 
-	int GetTotalTagCount() const;
+	void SetTagCount(const FGameplayTag& TagToSet, int32 NewCount);
+
+	int32 GetTotalTagCount() const;
 
 	// Safely increment or decrement the count of a tag. If the tag is not present and becomes positive, it will be added and vise-versa.
-	void ModifyTagCount(const FGameplayTag& TagToModify, int Delta);
+	void ModifyTagCount(const FGameplayTag& TagToModify, int32 Delta);
 
 	// Overwrite any present GameplayTags with GameplayTagContainerIn
 	void SetGameplayTagContainer(const FGameplayTagContainer& GameplayTagContainerIn);
@@ -71,12 +62,12 @@ struct GAMEPLAYSYSTEM_API FGameplayTagSystem
 	FGameplayTagContainer GetGameplayTagContainer() const;
 
 	// Overwrite the count for all tags with GameplayTagTableIn
-	void SetGameplayTagTable(const TMap<FGameplayTag, int>& GameplayTagTableIn);
+	void SetGameplayTagTable(const TMap<FGameplayTag, int32>& GameplayTagTableIn);
 
 	// Simple accessor
-	void GetGameplayTagTable(TMap<FGameplayTag, int>& GameplayTagTableOut) const;
+	void GetGameplayTagTable(TMap<FGameplayTag, int32>& GameplayTagTableOut) const;
 
-	TMap<FGameplayTag, int>::TConstIterator GetConstGameplayTagIterator() const;
+	TMap<FGameplayTag, int32>::TConstIterator GetConstGameplayTagIterator() const;
 
 	// Formats the tag count for display as 'TagName (Count)'
 	void ToStringArray(TArray<FString>& OutString) const;
@@ -89,7 +80,7 @@ struct GAMEPLAYSYSTEM_API FGameplayTagSystem
 
 	// Keeps track of the amount of each tag thats currently applied, to safely track multiple sources of the same tag.
 	UPROPERTY(SaveGame)
-	TMap<FGameplayTag, int> TagCountTable;
+	TMap<FGameplayTag, int32> TagCountTable;
 
 	// --- Delegates
 

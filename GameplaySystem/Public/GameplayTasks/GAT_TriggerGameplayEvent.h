@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -9,6 +9,7 @@
 #include "GAT_TriggerGameplayEvent.generated.h"
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGameplayEventAbortedSignature);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE(FOnGameplayEventEndedSignature);
 
 /**
  * 
@@ -40,6 +41,8 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void AbortEvent();
 
+	void OnEventEnded(UGameplayEvent* Event);
+
 	void OnAbilityCancelled();
 
 protected:
@@ -59,4 +62,7 @@ public:
 	// --- Delegates
 	UPROPERTY(BlueprintAssignable)
 	FOnGameplayEventAbortedSignature OnGameplayEventAbortedDelegate;
+
+	UPROPERTY(BlueprintAssignable)
+	FOnGameplayEventEndedSignature OnGameplayEventEndedDelegate;
 };

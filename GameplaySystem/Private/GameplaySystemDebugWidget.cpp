@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplaySystemDebugWidget.h"
@@ -83,30 +83,34 @@ void UGameplaySystemDebugWidget::NativeDestruct()
 
 void UGameplaySystemDebugWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
-	TickGenericDisplay(InDeltaTime);
+	K2_TickGenericDisplay(InDeltaTime);
 
-	if (!bEnabled || !BoundGameplaySystem.IsValid())
+	if (bEnabled && BoundGameplaySystem.IsValid() && BoundGameplaySystem->GetOwner())
 	{
-		return;
+		K2_TickGameplaySystemDisplay(InDeltaTime);
+		DrawDebugLines();
 	}
 
-	TickGameplaySystemDisplay(InDeltaTime);
-	DrawDebugLines();
-
-	if (!BoundEventSubsystem.IsValid())
+	if (BoundEventSubsystem.IsValid())
 	{
-		return;
+		K2_TickGameplayEventDisplay(InDeltaTime);
 	}
 
-	TickGameplayEventDisplay(InDeltaTime);
+	OnEnabledTick(MyGeometry, InDeltaTime);
 }
 
 FString UGameplaySystemDebugWidget::GetGenericDisplayInfo() const
 {
 	FString DisplayInfo = TextTag_Header + TEXT("Gameplay System Debug Info:") + TextTag_End + ENDL;
-	DisplayInfo += TextTag_Accept + TEXT("Press P to disable the UI, or O to cycle the target Actor.") + TextTag_End + ENDL;
-	DisplayInfo += TEXT("Target Actor: ") + TextTag_Highlight + BoundGameplaySystem->GetOwner()->GetActorNameOrLabel() + TextTag_End + ENDL;
-	DisplayInfo += TEXT("Has GameplaySystemComponent: ") + TextTag_Highlight + (BoundGameplaySystem.IsValid() ? FString(TEXT("Yes")) : FString(TEXT("No")) ) + TextTag_End + ENDL;
+	DisplayInfo += TextTag_Accept + TEXT("Press P to disable the UI, O to cycle the target Actor") + TextTag_End + ENDL;
+	DisplayInfo += TextTag_Accept + TEXT("and L to switch the displayed page.") + TextTag_End + ENDL;
+	DisplayInfo += TEXT("Has GameplaySystemComponent: ") + TextTag_Highlight + (BoundGameplaySystem.IsValid() ? FString(TEXT("Yes")) : FString(TEXT("No"))) + TextTag_End + ENDL;
+
+	if (BoundGameplaySystem.IsValid())
+	{
+		AActor* Owner = BoundGameplaySystem->GetOwner();
+		DisplayInfo += TEXT("Target Actor: ") + TextTag_Highlight + (Owner ? Owner->GetActorNameOrLabel() : TEXT("Invalid")) + TextTag_End + ENDL;
+	}
 
 	return DisplayInfo;
 }
@@ -148,7 +152,7 @@ FString UGameplaySystemDebugWidget::GetGameplayEffectsDisplayInfo() const
 		return FString();
 	}
 	
-	FString DisplayInfo = TextTag_Header + FString::Printf(TEXT("Current GameplayEffects: %d"), GameplaySystem->GetActiveGameplayEffectsCount()) + TextTag_End + ENDL;
+	FString DisplayInfo = TextTag_Header + FString::Printf(TEXT("Current GameplayEffects: %d"), GameplaySystem->GetGameplayEffectsCount()) + TextTag_End + ENDL;
 
 	for (const auto& [Handle, ActiveEffect] : GameplaySystem->ActiveGameplayEffects)
 	{
@@ -279,6 +283,11 @@ FEventsDisplayInfo UGameplaySystemDebugWidget::GetActorGameplayEventDisplayInfo(
 	}
 
 	UGameplaySystemComponent* GameplaySystem = BoundGameplaySystem.Get();
+	if (!GameplaySystem)
+	{
+		return FEventsDisplayInfo::MakeInvalid();
+	}
+
 	AActor* OwningActor = GameplaySystem->GetOwner();
 	if (!GameplaySystem || !OwningActor)
 	{
@@ -339,7 +348,7 @@ void UGameplaySystemDebugWidget::BindToPlayer()
 {
 	if (InputMapping.IsNull())
 	{
-		GS_LOG(Error, TEXT("No input mapping set for debug menu!"));
+		GS_LOG(Error, TEXT("GameplaySystemDebugWidget: No input mapping set for debug menu!"));
 		return;
 	}
 
@@ -348,17 +357,17 @@ void UGameplaySystemDebugWidget::BindToPlayer()
 
 	if (!Player || !PlayerController)
 	{
-		GS_LOG(Error, TEXT("No player found!"));
+		GS_LOG(Error, TEXT("GameplaySystemDebugWidget: No player found!"));
 		return;
 	}
-
-	BindToGameplaySystem(Player->FindComponentByClass<UGameplaySystemComponent>());
+	
+	BindToGameplaySystem(UGameplaySystemComponent::GetGameplaySystemFromActor(Player));
 
 	ULocalPlayer* LocalPlayer = PlayerController->GetLocalPlayer();
 
 	if (!LocalPlayer)
 	{
-		GS_LOG(Error, TEXT("No local player found!"));
+		GS_LOG(Error, TEXT("GameplaySystemDebugWidget: No local player found!"));
 		return;
 	}
 
@@ -366,7 +375,7 @@ void UGameplaySystemDebugWidget::BindToPlayer()
 
 	if (!InputSystem)
 	{
-		GS_LOG(Error, TEXT("No EnhancedInputSubsystem found!"));
+		GS_LOG(Error, TEXT("GameplaySystemDebugWidget: No EnhancedInputSubsystem found!"));
 		return;
 	}
 
@@ -393,7 +402,7 @@ void UGameplaySystemDebugWidget::BindToGameplaySystem(UGameplaySystemComponent* 
 {
 	if(!NewSystem)
 	{
-		GS_LOG(Warning, TEXT("Attempted to bind to null GameplaySystemComponent!"));
+		GS_LOG(Warning, TEXT("GameplaySystemDebugWidget: Attempted to bind to null GameplaySystemComponent!"));
 		return;
 	}
 
@@ -408,6 +417,8 @@ void UGameplaySystemDebugWidget::BindToGameplaySystem(UGameplaySystemComponent* 
 	}
 
 	CleanSystemCandidates();
+
+	OnBoundToGameplaySystem(NewSystem);
 }
 
 void UGameplaySystemDebugWidget::BindToGameplayEventSubsystem()
@@ -445,20 +456,20 @@ void UGameplaySystemDebugWidget::CycleDebugTarget()
 
 	if (GameplaySystemActors.Num() == 0)
 	{
-		GS_LOG(Warning, TEXT("No more GameplaySystemComponents could be found. Do they implement IGameplaySystemOwnerInterface?"));
+		GS_LOG(Warning, TEXT("GameplaySystemDebugWidget: No more GameplaySystemComponents could be found. Do they implement IGameplaySystemOwnerInterface?"));
 		return;
 	}
 
 	// Add any newly created GameplaySystems to the list of candidates 
 	for (const AActor* Actor : GameplaySystemActors)
 	{	
-		if (UGameplaySystemComponent* GameplaySystem = Actor->GetComponentByClass<UGameplaySystemComponent>())
+		if (UGameplaySystemComponent* GameplaySystem = UGameplaySystemComponent::GetGameplaySystemFromActor(Actor))
 		{
 			ActiveSystemCandidates.AddUnique(GameplaySystem);
 		}
 		else
 		{
-			GS_LOG(Error, TEXT("Found Actor did not own GameplaySystem: %s"), *Actor->GetName());
+			GS_LOG(Error, TEXT("GameplaySystemDebugWidget: Found Actor did not own GameplaySystem: %s"), *Actor->GetName());
 		}
 	}
 
@@ -474,7 +485,7 @@ void UGameplaySystemDebugWidget::CycleDebugTarget()
 		// We ensure it's a valid AND new candidate before switching to it
 		if (CurrentCandidate.IsValid() && CurrentCandidate != BoundGameplaySystem)
 		{
-			ClearDisplay();
+			K2_ClearDisplay();
 			BindToGameplaySystem(CurrentCandidate.Get());
 			return;
 		}
@@ -501,13 +512,13 @@ void UGameplaySystemDebugWidget::CycleMenu()
 	{
 		DisplayedPage = PAGE_START_INDEX;
 	}
-	else if (DisplayedPage > PAGE_START_INDEX)
+	else if (DisplayedPage > PageCount)
 	{
-		DisplayedPage = PageCount;
+		DisplayedPage = PAGE_START_INDEX;
 	}
 
 	if (PreviousPage != DisplayedPage)
 	{
-		CycleMenu(DisplayedPage);
+		K2_CycleMenu(DisplayedPage);
 	}
 }

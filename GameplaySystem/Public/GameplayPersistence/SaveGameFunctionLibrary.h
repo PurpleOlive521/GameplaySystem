@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -41,4 +41,14 @@ public:
 	 */
 	UFUNCTION(BlueprintCallable, Category = "SaveGame|Helpers", meta = (DefaultToSelf = "Actor"))
 	static bool SerializeActorTransform(UPARAM(ref) FSaveGameArchive& Archive, AActor* Actor);
+
+	/**
+	 * Helper method to serialize a generic Controller, if the Character has one.
+	 *
+	 * @param Archive The archive that the save game is serializing
+	 * @param Character The Character whose Controller will be serialized
+	 * @return true if the Controller was serialized
+	 */
+	UFUNCTION(BlueprintCallable, Category = "SaveGame|Helpers", meta = (DefaultToSelf = "Character"))
+	static bool SerializeGenericController(UPARAM(ref) FSaveGameArchive& Archive, AController* Controller);
 };

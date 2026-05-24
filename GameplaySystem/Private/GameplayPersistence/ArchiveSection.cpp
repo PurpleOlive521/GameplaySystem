@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "ArchiveSection.h"
@@ -29,8 +29,13 @@ void FArchiveSection::MarkSizeChanged()
 	uint64 NewSize = GetSize();
 	if (NewSize != PreviousSize)
 	{
-		check(NewSize < INT64_MAX); // Overflow will occur when calculating difference
-		int64 Delta = NewSize - PreviousSize;
+		check(NewSize <= INT64_MAX); // Overflow will occur when calculating difference
+		check(PreviousSize <= INT64_MAX); 
+
+		int64 Delta = 0;
+		const bool bNoOverflow = FMath::SubtractAndCheckForOverflow((int64)NewSize, (int64)PreviousSize, Delta);
+		check(bNoOverflow);
+
 		Container->OnSectionResized(*this, Delta);
 		PreviousSize = NewSize;
 	}
@@ -38,18 +43,22 @@ void FArchiveSection::MarkSizeChanged()
 
 void FArchiveSection::Shift(int64 Delta)
 {
+	bool bNoOverflow = true;
+
 	if (Delta < 0)
 	{
 		uint64 NewDelta = uint64(abs(Delta));
-		check(FMath::SubtractAndCheckForOverflow(StartOffset, NewDelta, StartOffset));
-		check(FMath::SubtractAndCheckForOverflow(EndOffset, NewDelta, EndOffset));
+		bNoOverflow &= FMath::SubtractAndCheckForOverflow(StartOffset, NewDelta, StartOffset);
+		bNoOverflow &= FMath::SubtractAndCheckForOverflow(EndOffset, NewDelta, EndOffset);
 	}
 	else
 	{
 		uint64 NewDelta = uint64(Delta);
-		check(FMath::AddAndCheckForOverflow(StartOffset, NewDelta, StartOffset));
-		check(FMath::AddAndCheckForOverflow(EndOffset, NewDelta, EndOffset));
+		bNoOverflow &= FMath::AddAndCheckForOverflow(StartOffset, NewDelta, StartOffset);
+		bNoOverflow &= FMath::AddAndCheckForOverflow(EndOffset, NewDelta, EndOffset);
 	}
+
+	check(bNoOverflow);
 }
 
 bool FArchiveSection::IsAfter(const FArchiveSection& OtherScope) const

@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -14,6 +14,7 @@ public:
 	{
 
 		PreReleaseTesting,
+		StackingGameplayEffects, // Advent of Stacking GameplayEffects and overall improvements to GameplaySystem framework.
 
 		// -----<new versions can be added above this line>-------------------------------------------------
 		VersionPlusOne,

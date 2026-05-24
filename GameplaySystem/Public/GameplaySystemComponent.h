@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -15,6 +15,7 @@
 #include "functional"
 #include "Animation/AnimInstance.h"
 #include "SaveableObjectInterface.h"
+#include "GameplaySystemProperties.h"
 
 #include "GameplaySystemComponent.generated.h"
 
@@ -31,6 +32,9 @@ DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FOnLeveledUpSignature, int, Previ
 
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnAnyAbilityEndedSignature, const FGameplayAbilityHandle&, Handle);
 
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_TwoParams(FOnGameplayEffectAddedSignature, TSubclassOf<UGameplayEffect>, AddedClass, const FGameplayEffectHandle&, Handle);
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FOnGameplayEffectRemovedSignature, const FGameplayEffectHandle&, Handle);
+
 
 // A collection of delegates that are accessed and managed through a single entry-point. 
 // The delegates are created on-demand, and removed when no longer bound to.
@@ -41,12 +45,15 @@ struct GAMEPLAYSYSTEM_API FDelegateCollection
 
 	FDelegateCollection() = default;
 
+	// TODO: Pass a GameplaySystem reference along with this, so listeners don't need to grab a WeakObjectPtr?
 	TMap<EAttributeType, FOnAttributeChangedSignature> DelegateMap;
 
-	// Returns the associated delegate, or creates one if one doesn't exist. Only use to bind to delegates, see FDelegateCollection::Broadcast for broadcasting!
+	// Returns the associated delegate, or creates one if one doesn't exist. 
+	// Only used to bind to delegates, see FDelegateCollection::Broadcast for broadcasting.
 	FOnAttributeChangedSignature& GetDelegate(EAttributeType Attribute);
 
-	// Returns the associated delegates, or creates ones if they don't exist. Only use to bind to delegates, see FDelegateCollection::BroadcastMultiple for broadcasting!
+	// Returns the associated delegates, or creates ones if they don't exist. 
+	// Only used to bind to delegates, see FDelegateCollection::BroadcastMultiple for broadcasting.
 	void GetMultipleDelegates(const TArray<EAttributeType>& Attributes, TArray<FOnAttributeChangedSignature*>& OutDelegates);
 
 	// Returns true if a delegate is present for the AttributeType
@@ -176,10 +183,11 @@ public:
 	void RemoveTag(const FGameplayTag& TagToRemove) override;
 	void ClearTag(const FGameplayTag& TagToClear) override;
 	void AppendTags(FGameplayTagContainer const& Other) override;
-	bool HasTag(const FGameplayTag& TagToCheck) override;
-	bool HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst) override;
-	int GetTagCount(const FGameplayTag& TagToCheck) override;
-	int GetTotalTagCount() override;
+	bool HasTag(const FGameplayTag& TagToCheck) const override;
+	bool HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst) const override;
+	int GetTagCount(const FGameplayTag& TagToCheck) const override;
+	void SetTagCount(const FGameplayTag& TagToSet, int32 NewCount) override;
+	int GetTotalTagCount() const override;
 	// --- End GameplayTagOwnerInterface
 
 	// --- Begin GameplayTasksComponent Interface
@@ -189,28 +197,23 @@ public:
 
 	// --- Begin SaveableObject Interface
 	virtual bool OnSerialize(FSaveGameArchive& Archive, bool bIsLoading) override;
-	// --- Begin SaveableObject Interface
+	// --- End SaveableObject Interface
 
 	// --- Helpers
 
 	// Tries to get the GameplaySystemComponent from this Actor.
 	// Will first try through the GameplaySystemOwnerInterface, otherwise will resort to a component search.
 	UFUNCTION(BlueprintCallable)
-	static UGameplaySystemComponent* GetGameplaySystemFromActor(AActor* Actor);
-
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "SaveSystem")
-	FGameplaySystemSaveObject Save() const;
-
-	UFUNCTION(BlueprintCallable, Category = "SaveSystem")
-	void Load(const FGameplaySystemSaveObject& GameplaySystemSaveData);
-
-
+	static UGameplaySystemComponent* GetGameplaySystemFromActor(const AActor* Actor);
 
 	// --- Attributes
 
 	// Get the value of an attribute.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Attributes")
 	float GetAttributeValue(EAttributeType AttributeType, EAttributeValue TargetValue);
+
+	// Does not check dirty or prompt reevaluation, which means that the value can be outdated.
+	float GetAttributeValue_Raw(EAttributeType AttributeType, EAttributeValue TargetValue);
 
 	UFUNCTION(BlueprintCallable, Category = "Attributes")
 	void ModifyAttributeValue(EAttributeType AttributeType, EAttributeValue TargetValue, float ValueChange);
@@ -224,9 +227,6 @@ public:
 	// Returns true if it contains the AttributeType
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Attributes")
 	bool HasAttributeType(EAttributeType AttributeType);
-
-	UFUNCTION(BlueprintCallable, Category = "Attributes")
-	void SetAttributeDataSet(UAttributeDataSet* InAttributeDataSet);
 
 	// Gets all the Attributes in this Component
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "Attributes")
@@ -255,6 +255,19 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Attributes")
 	void ForceEvaluateAttributes();
 
+	// Marks all attributes in Attributes as dirty.
+	void MarkAttributesDirty(const TArray<EAttributeType>& Attributes);
+
+	// Helper overload, marks the Attribute as dirty.
+	void MarkAttributesDirty(EAttributeType Attribute);
+
+	// Helper overload, marks all attributes modified by the AttributeEffects as dirty.
+	void MarkAttributesDirty(const TArray<FAttributeEffect>& AttributesEffects);
+
+	// Helper overload, marks all attributes modified by this ActiveGameplayEffect as dirty.
+	void MarkAttributesDirty(const FActiveGameplayEffect& ActiveEffect);
+
+
 
 
 	// --- AttributeEffects
@@ -263,6 +276,9 @@ public:
 
 	// Removes the first instance of the AttributeEffect.
 	void RemoveAttributeEffect(FAttributeEffect& EffectToRemove);
+
+	// Informs the GameplaySystem that the AttributeEffect is modified in some way.
+	void InformAttributeEffectChanged(const FAttributeEffect& Effect);
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "AttributeEffects")
 	int GetActiveEffectsCount() const;
@@ -282,7 +298,6 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Attributes|LevelSystem")
 	void AddExperience(float Experience);
 
-	// Prone to clamping.
 	UFUNCTION(BlueprintCallable, Category = "Attributes|LevelSystem")
 	void SetExperience(float Experience);
 
@@ -300,14 +315,10 @@ public:
 	// --- GameplayEffects
 
 	// Returns true if applied successfully, and false otherwise.
-	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
-	bool AddGameplayEffect(UGameplayEffect* EffectToApply, FGameplayEffectHandle& OutHandle);
+	UFUNCTION(BlueprintCallable, meta = (DefaultToSelf = "Instigator"), Category = "GameplayEffects")
+	bool AddGameplayEffectFromType(TSubclassOf<UGameplayEffect> EffectToApply, FGameplayEffectHandle& OutHandle, AActor* Instigator = nullptr);
 
-	// Returns true if applied successfully, and false otherwise.
-	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
-	bool AddGameplayEffectFromType(TSubclassOf<UGameplayEffect> EffectToApply, FGameplayEffectHandle& OutHandle);
-
-	// Removes the first GameplayEffect found of this type. Use 
+	// Removes the first GameplayEffect found of this type.
 	// Returns true if removed successfully, and false otherwise.
 	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
 	bool RemoveGameplayEffect(const UGameplayEffect* EffectToRemove);
@@ -316,6 +327,10 @@ public:
 	// Returns true if removed successfully, and false otherwise.
 	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
 	bool RemoveGameplayEffectFromType(TSubclassOf<UGameplayEffect> EffectToRemove);
+	
+	// Removes all GameplayEffects are of Type.
+	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
+	bool RemoveAllGameplayEffectsOfType(TSubclassOf<UGameplayEffect> Type);
 
 	// Case sensitive. Use with caution when passing more generic names.
 	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
@@ -332,27 +347,34 @@ public:
 	// Returns the amount of GameplayEffects removed.
 	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
 	int RemoveGameplayEffectsByHandles(const TArray<FGameplayEffectHandle>& EffectsToRemove);
+	
+	UFUNCTION(BlueprintCallable, meta = (DefaultToSelf = "Instigator"), Category = "GameplayEffects")
+	bool ApplyGameplayEffectStackModifier(TSubclassOf<UGameplayEffect> Class, const FGameplayEffectStackModifier& Modifier, AActor* Instigator = nullptr);
 
 	// Gets all the Effects currently active in this Component
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayEffects")
-	void GetActiveGameplayEffects(TMap<FGameplayEffectHandle, FActiveGameplayEffect>& EffectsOut) const;
+	void GetGameplayEffects(TMap<FGameplayEffectHandle, FActiveGameplayEffect>& EffectsOut) const;
 
 	// Overwrites any currently applied Effects with EffectsIn
 	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
-	void SetActiveGameplayEffects(const TMap<FGameplayEffectHandle, FActiveGameplayEffect>& EffectsIn);
+	void SetGameplayEffects(const TMap<FGameplayEffectHandle, FActiveGameplayEffect>& EffectsIn);
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
-	int GetActiveGameplayEffectsCount() const;
+	int GetGameplayEffectsCount() const;
 
-	inline FActiveGameplayEffect* GetActiveGameplayEffectByHandle(const FGameplayEffectHandle& Handle);
+	FActiveGameplayEffect* GetGameplayEffectByHandle(const FGameplayEffectHandle& Handle);
+
+	FGameplayEffectHandle GetGameplayEffectByClass(TSubclassOf<UGameplayEffect> Class);
 
 	void GetMatchingGameplayEffects(const FGameplayTagQuery& TagQuery, TArray<FGameplayEffectHandle>& OutHandles) const;
+
+	void GetGameplayEffectsByPredicate(std::function<bool(const FActiveGameplayEffect*)> Predicate, TArray<FGameplayEffectHandle>& OutHandles, FActiveGameplayEffect* Ignore = nullptr) const;
 
 	// Returns the first GameplayEffect found that shares the same CDO as EffectToCheck.
 	bool HasGameplayEffectOfInstance(const UGameplayEffect* EffectToCheck, FGameplayEffectHandle& OutHandle) const;
 
 	// Returns true if a GameplayEffect with the given Handle is present.
-	inline bool HasGameplayEffect(const FGameplayEffectHandle& Handle) const;
+	bool HasGameplayEffect(const FGameplayEffectHandle& Handle) const;
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayEffects")
 	void PauseAllGameplayEffects();
@@ -446,11 +468,11 @@ public:
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayAbility")
 	void GetActiveAbilitiesByTags(const FGameplayTagContainer& TagsToCheck, TArray<FGameplayAbilityHandle>& OutHandles, UGameplayAbility* Ignore = nullptr) const;
 
-	// Searches available abilities and returns.
+	// Searches available abilities and returns any abilites of the same class.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayAbility")
 	void GetAbilitiesByClass(TSubclassOf<UGameplayAbility> Class, TArray<FGameplayAbilityHandle>& OutHandles, UGameplayAbility* Ignore = nullptr) const;
 
-	// Searches only in active abilities and returns
+	// Searches only in active abilities and returns any abilites of the same class.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayAbility")
 	void GetActiveAbilitiesByClass(TSubclassOf<UGameplayAbility> Class, TArray<FGameplayAbilityHandle>& OutHandles, UGameplayAbility* Ignore = nullptr) const;
 
@@ -459,6 +481,10 @@ public:
 	
 	// Searches only in active abilities and returns that matches the predicate.
 	void GetActiveAbilitiesByPredicate(std::function<bool(const FActiveGameplayAbility*)> Predicate, TArray<FGameplayAbilityHandle>& OutHandles, UGameplayAbility* Ignore = nullptr) const;
+
+	// Returns all currently active abilities.
+	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayAbility")
+	void GetAllActiveAbilities(TArray<FGameplayAbilityHandle>& OutHandles, UGameplayAbility* Ignore = nullptr) const;
 
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplayAbility")
 	int GetAbilityInstanceCount() const;
@@ -511,24 +537,26 @@ public:
 	// Playing through the GameplaySystem interface allows us to keep track of what ability played what montage, which can then be used by abilities
 	// to route AnimNotifies and Montage events to the correct ability.
 
+
+	// Returns the FName representation of the slot that the Animation will animate in.
+	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
+	static FName GetGroupForAnimation(UAnimSequenceBase* Animation);
+
 	// Plays the Montage in the GameplaySystems AnimInstance. Returns the length of the played montage. 
 	float PlayMontage(UGameplayAbility* PlayingAbility, UAnimMontage* MontageToPlay, FPlayMontageParams& Params);
 
-	// Gets the ability that is currently animating, if any.
+	// Gets the ability that is currently animating in Slot, if any.
 	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
-	UGameplayAbility* GetAnimatingAbility() const;
-
-	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
-	void ClearAnimMontageInfo();
+	UGameplayAbility* GetAnimatingAbility(FName Group) const;
 
 	FGameplaySystemAnimMontageInfo* GetAnimMontageInfo();
 
 	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
-	UAnimMontage* GetCurrentAnimMontage() const;
+	UAnimMontage* GetCurrentAnimMontage(FName Group) const;
 
-	// Stops the current AnimMontage. Uses the AnimMontages own BlendOutTime if OverrideBlendOutTime is not passed.
+	// Stops the current AnimMontage in Slot. Uses the AnimMontages own BlendOutTime if OverrideBlendOutTime is not passed.
 	UFUNCTION(BlueprintCallable, Category = "AnimMontage")
-	void StopCurrentMontage(float OverrideBlendOutTime = -1.0f);
+	void StopCurrentMontage(FName Group, float OverrideBlendOutTime = -1.0f);
 
 	// --- General
 
@@ -555,9 +583,7 @@ protected:
 
 	bool RemoveGameplayEffect_Internal(const FGameplayEffectHandle& EffectToRemove);
 
-	void ApplyAttributeEffect_Internal(const FAttributeEffect& EffectToApply);
-
-	void ApplyAttributeEffect_Internal_Instant(FAttributeEffect EffectToApply);
+	void ApplyAttributeEffect_Instant(FAttributeEffect EffectToApply);
 
 	void RegisterGameplayEffect(const FGameplayEffectHandle& Handle, FActiveGameplayEffect& ActiveEffect);
 
@@ -575,22 +601,12 @@ protected:
 	// Boilerplate setup for a ability that is about to be activated. 
 	FGameplayAbilityHandle PreActivateAbility(UGameplayAbility* AbilityInstance);
 
-	// Any tags specified here are added on startup.
-	UPROPERTY(EditAnywhere, Category = "GameplayTags")
-	FGameplayTagContainer StartUpTags;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes")
-	TObjectPtr<UAttributeDataSet> AttributeDataSet = nullptr;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attributes|Level System")
-	TObjectPtr<UCurveTable> LevelScalingCurveTable = nullptr;
-
-	// A value of -1 means we don't use the Level system, and won't respond to level-ups.
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, SaveGame, Category = "Attributes|Level System")
-	int EntityLevel = 0;
-
-	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "AbilityBuffering")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "AbilityBuffering")
 	bool bAllowAbilityQueueing = false;
+
+	// Starting properties that define this GameplaySystem.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	TObjectPtr<const UGameplaySystemProperties> Properties;
 
 	// --- Abilities
 
@@ -627,11 +643,15 @@ private:
 	UPROPERTY(SaveGame)
 	float EntityExperience = 0.0f;
 
+	UPROPERTY(SaveGame)
+	int EntityLevel = 1;
+
 	uint32 CachedAttributeEffectCount = 0U;
 
 	UPROPERTY(SaveGame)
 	TMap<EAttributeType, FAttribute> Attributes;
 
+	UPROPERTY(SaveGame)
 	TMap<FGameplayEffectHandle, FActiveGameplayEffect> ActiveGameplayEffects;
 
 	UPROPERTY(SaveGame)
@@ -645,11 +665,10 @@ private:
 
 	UGameplaySystemDeveloperSettings const* GameplaySystemSettings = nullptr;
 
-
 public:
 	// --- Delegates
 
-	// Invoked when any attribute has it's value changed. Use sparingly as this is called very often.
+	// Invoked when any attribute has it's value changed. This is invoked very often so use sparingly.
 	UPROPERTY(BlueprintAssignable)
 	FOnAnyAttributeChangedSignature OnAnyAttributeChangedDelegate;
 
@@ -663,4 +682,10 @@ public:
 	// Invoked both on Cancel and End.
 	UPROPERTY(BlueprintAssignable)
 	FOnAnyAbilityEndedSignature OnAnyAbilityEndedDelegate;
+
+	UPROPERTY(BlueprintAssignable)
+	FOnGameplayEffectAddedSignature OnGameplayEffectAddedDelegate;
+
+	UPROPERTY(BlueprintAssignable)
+	FOnGameplayEffectRemovedSignature OnGameplayEffectRemovedDelegate;
 };

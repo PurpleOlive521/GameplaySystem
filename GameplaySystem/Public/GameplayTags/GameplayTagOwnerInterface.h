@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -43,17 +43,20 @@ public:
 
 	// Returns true if the tag is present in atleast 1 quantity, false otherwise.
 	UFUNCTION(BlueprintCallable, Category = "GameplayTagOwnerInterface")
-	virtual bool HasTag(const FGameplayTag& TagToCheck);
+	virtual bool HasTag(const FGameplayTag& TagToCheck) const;
 
 	// Returns true if all tags in the container are present in atleast 1 quantity, false otherwise.
 	UFUNCTION(BlueprintCallable, Category = "GameplayTagOwnerInterface")
-	virtual bool HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst);
+	virtual bool HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst) const;
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayTagOwnerInterface")
-	virtual int GetTagCount(const FGameplayTag& TagToCheck);
+	virtual int32 GetTagCount(const FGameplayTag& TagToCheck) const;
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayTagOwnerInterface")
-	virtual int GetTotalTagCount();
+	virtual void SetTagCount(const FGameplayTag& TagToSet, int32 NewCount);
+
+	UFUNCTION(BlueprintCallable, Category = "GameplayTagOwnerInterface")
+	virtual int32 GetTotalTagCount() const;
 
 
 };

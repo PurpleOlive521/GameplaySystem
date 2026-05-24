@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -15,7 +15,7 @@ class UGameplaySaveGame;
  * The blueprint representation of the structured record we're writing to.
  *
  * When serializing a binary archive, FSaveGameArchive on construction will store its initial position that it started
- * serializing from. Once FSaveGameArchive loses Section and calls its destructor, it will then serialize all of the
+ * serializing from. Once FSaveGameArchive loses scope and calls its destructor, it will then serialize all of the
  * field names and their offsets, if loading, it will automatically seek to the very end of the archive. The initial
  * position and stored offsets can be used for out-of-order seeking to each of the archive's serialized fields.
  *
@@ -139,6 +139,10 @@ public:
 	// Global data will always be loaded and saved, regardless of the active level. Important for "game wide" data such as player state, currency, and more.
 	UFUNCTION(BlueprintNativeEvent, Category = "SaveGame|Spawn")
 	bool IsGlobalData();
+
+	// Tracks the Actor being destroyed even if it is not considered a Loaded Actor.
+	UFUNCTION(BlueprintNativeEvent, Category = "SaveGame")
+	bool ShouldAlwaysTrackDestroyed();
 
 	virtual bool OnSerialize(FSaveGameArchive& Archive, bool bIsLoading);
 

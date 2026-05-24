@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "ArchiveSectionContainer.h"
@@ -21,15 +21,19 @@ void FArchiveSectionContainer::OnSectionResized(FArchiveSection& ChangedOffset, 
 {
 	FString Key = GetSectionName(ChangedOffset);
 
-	uint64 OldEndOffset;
+	// Note because I keep messing this up: We intentionally undo Delta, since we want to find our previous offset, before delta was applied!
+	uint64 OldEndOffset = 0U;
+	bool bNoOverflow = true;
 	if (Delta < 0)
 	{
-		check(FMath::AddAndCheckForOverflow(ChangedOffset.EndOffset, uint64(Delta), OldEndOffset));
+		bNoOverflow = FMath::AddAndCheckForOverflow(ChangedOffset.EndOffset, uint64(abs(Delta)), OldEndOffset);
 	}
 	else
 	{
-		check(FMath::SubtractAndCheckForOverflow(ChangedOffset.EndOffset, uint64(abs(Delta)), OldEndOffset));
+		bNoOverflow = FMath::SubtractAndCheckForOverflow(ChangedOffset.EndOffset, uint64(Delta), OldEndOffset);
 	}
+
+	check(bNoOverflow);
 
 	if (not Key.IsEmpty())
 	{
@@ -66,7 +70,10 @@ FArchiveSection& FArchiveSectionContainer::GetOrAddSection(const FString& Name, 
 
 const FArchiveSection* FArchiveSectionContainer::GetSection(const FString& Name) const
 {
-	ensureAlways(not Name.IsEmpty());
+	if (Name.IsEmpty())
+	{
+		return nullptr;
+	}
 
 	return Sections.Find(Name);
 }

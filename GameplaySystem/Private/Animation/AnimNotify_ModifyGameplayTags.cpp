@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "AnimNotify_ModifyGameplayTags.h"
@@ -6,6 +6,13 @@
 #include "GameplaySystemComponent.h"
 #include "GameplaySystemOwnerInterface.h"
 
+
+UAnimNotify_ModifyGameplayTags::UAnimNotify_ModifyGameplayTags()
+{
+#if WITH_EDITORONLY_DATA
+	bShouldFireInEditor = false;
+#endif //WITH_EDITORONLY_DATA
+}
 
 void UAnimNotify_ModifyGameplayTags::Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference)
 {
@@ -26,13 +33,3 @@ void UAnimNotify_ModifyGameplayTags::Notify(USkeletalMeshComponent* MeshComp, UA
 		}
 	}
 }
-
-
-#if WITH_EDITOR
-
-bool UAnimNotify_ModifyGameplayTags::ShouldFireInEditor()
-{
-	return false;
-}
-
-#endif // WITH_EDITOR

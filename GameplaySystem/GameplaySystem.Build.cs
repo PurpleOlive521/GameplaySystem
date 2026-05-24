@@ -1,3 +1,4 @@
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 using System.IO;
 using UnrealBuildTool;
 
@@ -17,6 +18,7 @@ public class GameplaySystem: ModuleRules
                     "CommonInput", // For accessing base input classes, like InputMapping
                     "GameplayTags",
                     "UMG", // Widget functionality in native
+                    "Niagara",
 
                 }
                 );

@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -17,12 +17,10 @@ class GAMEPLAYSYSTEM_API UAnimNotify_ModifyAbility : public UGSAnimNotify
 
 public:
 
+	UAnimNotify_ModifyAbility();
+
 	// --- Begin UAnimNotify Interface
 	virtual void Notify(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
-
-#if WITH_EDITOR
-	virtual bool ShouldFireInEditor() override;
-#endif
 
 	// --- End UAnimNotify Interface
 	

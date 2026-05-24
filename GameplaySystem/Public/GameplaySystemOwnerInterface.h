@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -27,13 +27,13 @@ class GAMEPLAYSYSTEM_API IGameplaySystemOwnerInterface
 
 public:
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GameplaySystemOwnerInterface")
-	class UGameplaySystemComponent* GetGameplaySystemComponent();
+	class UGameplaySystemComponent* GetGameplaySystemComponent() const;
 
 	// Not all objects will use the GameplaySystemComponent or it's internal GameplayTagSystem.
 	// When possible, acccess it through this interface to allow the object to define how it stores its GameplayTagSystem.
 	UFUNCTION(BlueprintNativeEvent, BlueprintCallable, Category = "GameplaySystemOwnerInterface", meta = (DisplayName = "Get GameplayTagSystem"))
-	void K2_GetGameplayTagSystem(FGameplayTagSystem& OutGameplayTagSystem);
+	void K2_GetGameplayTagSystem(FGameplayTagSystem& OutGameplayTagSystem) const;
 
 	// Returns a pointer to the GameplayTagSystem struct to avoid accidental copies and improper handling.
-	virtual FGameplayTagSystem* GetGameplayTagSystem();
+	virtual FGameplayTagSystem* GetGameplayTagSystem() const;
 };

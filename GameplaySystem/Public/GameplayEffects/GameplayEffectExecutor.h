@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -31,7 +31,7 @@ struct FGameplayEffectExecutorParams
 
 /*
 * Customises the response to a GameplayEffects lifetime events.
-* Allows for changing incoming modifiers. Can be used to allow or forbid certain changes, add new ones or change exisiting ones.
+* Allows for changing incoming modifiers. Can be used to allow or forbid certain changes, add new ones or change existing ones.
 */
 UCLASS(Blueprintable, EditInlineNew)
 class GAMEPLAYSYSTEM_API UGameplayEffectExecutor : public UObject
@@ -43,11 +43,11 @@ public:
 
 	// --- Default implementations - Always called after all module overrides are processed
 
-	static void Apply(FGameplayEffectExecutorParams Params);
+	static void Apply(const FGameplayEffectExecutorParams& Params);
 
-	static void Reapply(FGameplayEffectExecutorParams Params);
+	static void Reapply(const FGameplayEffectExecutorParams& Params);
 
-	static void Remove(FGameplayEffectExecutorParams Params);
+	static void Remove(const FGameplayEffectExecutorParams& Params);
 
 	// --- Module overrides
 

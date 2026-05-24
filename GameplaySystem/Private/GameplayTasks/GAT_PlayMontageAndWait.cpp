@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayTasks/GAT_PlayMontageAndWait.h"
@@ -198,7 +198,9 @@ bool UGAT_PlayMontageAndWait::StopPlayingMontage()
 	UGameplaySystemComponent* GS = GameplaySystem.Get();
 	if (GS && Ability)
 	{
-		if (GS->GetAnimatingAbility() == Ability && GS->GetCurrentAnimMontage() == MontageToPlay)
+		const FName Group = UGameplaySystemComponent::GetGroupForAnimation(MontageToPlay);
+
+		if (GS->GetAnimatingAbility(Group) == Ability && GS->GetCurrentAnimMontage(Group) == MontageToPlay)
 		{
 			// Unbind delegates so they don't get called as well
 			FAnimMontageInstance* MontageInstance = AnimInstance->GetActiveInstanceForMontage(MontageToPlay);
@@ -208,7 +210,7 @@ bool UGAT_PlayMontageAndWait::StopPlayingMontage()
 				MontageInstance->OnMontageEnded.Unbind();
 			}
 
-			GS->StopCurrentMontage();
+			GS->StopCurrentMontage(Group);
 			return true;
 		}
 	}

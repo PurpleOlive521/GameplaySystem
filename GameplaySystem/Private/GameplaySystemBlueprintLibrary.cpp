@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplaySystemBlueprintLibrary.h"
@@ -34,22 +34,33 @@ bool UGameplaySystemBlueprintLibrary::CheckGameplayAbilityHandle(const FActiveGa
 {
 	return IsValid(ActiveGameplayAbility.Ability) && ActiveGameplayAbility.Handle.IsValid();
 }
-
 // --- Ability Slots
 
-bool UGameplaySystemBlueprintLibrary::ActivateAbility(FGameplayAbilitySlot& Slot)
+bool UGameplaySystemBlueprintLibrary::ActivateAbility(FGameplayAbilitySlotContainer& Container, const FGameplayTag& Tag)
 {
-	return Slot.ActivateAbility();
+	FGameplayAbilityActivationData ActivationData;
+	return ActivateAbility_ActivationData(Container, Tag, ActivationData);
 }
 
-void UGameplaySystemBlueprintLibrary::SetAbility(FGameplayAbilitySlot& Slot, TSubclassOf<UGameplayAbility> Ability)
+bool UGameplaySystemBlueprintLibrary::ActivateAbility_ActivationData(FGameplayAbilitySlotContainer& Container, const FGameplayTag& Tag, const FGameplayAbilityActivationData& ActivationData)
 {
-	Slot.SetAbility(Ability);
+	if (FGameplayAbilitySlot* Slot = Container.GetSlot(Tag))
+	{
+		return Slot->ActivateAbility(ActivationData);
+	}
+
+	return false;
 }
 
-bool UGameplaySystemBlueprintLibrary::GetSlot(const FGameplayAbilitySlotContainer& SlotContainer, const FGameplayTag& SlotTag, FGameplayAbilitySlot& OutSlot)
+bool UGameplaySystemBlueprintLibrary::SetAbility(FGameplayAbilitySlotContainer& Container, const FGameplayTag& Tag, TSubclassOf<UGameplayAbility> Ability)
 {
-	return SlotContainer.GetSlotRef(SlotTag, OutSlot);
+	if (FGameplayAbilitySlot* Slot = Container.GetSlot(Tag))
+	{
+		Slot->SetAbility(Ability);
+		return true;
+	}
+
+	return false;
 }
 
 // --- Attributes
@@ -75,6 +86,9 @@ FString UGameplaySystemBlueprintLibrary::ConvertAttributeToDisplayName(EAttribut
 
 		case(EAttributeType::EAT_AppliedCharge):
 			return TEXT("Applied Charge");
+
+		case(EAttributeType::EAT_StaggerDamage):
+			return TEXT("Stagger Damage");
 
 		case(EAttributeType::EAT_RecoveryTime):
 			return TEXT("Recovery Time");
@@ -123,6 +137,23 @@ FString UGameplaySystemBlueprintLibrary::ConvertAttributeToDisplayName(EAttribut
 
 		case(EAttributeType::EAT_GammaOverheat):
 			return TEXT("Gamma Overheat");
+
+
+		case(EAttributeType::EAT_AilmentImmunity):
+			return TEXT("Ailment Immunity");
+
+		case(EAttributeType::EAT_AilmentResistance):
+			return TEXT("Ailment Resistance");
+
+		case(EAttributeType::EAT_AilmentStrength):
+			return TEXT("Ailment Strength");
+
+		case(EAttributeType::EAT_TimeDilation):
+			return TEXT("Time Dilation");
+
+		case(EAttributeType::EAT_Template):
+			return TEXT("Template");
+
 		case(EAttributeType::EAT_NONE):
 			return TEXT("NONE");
 

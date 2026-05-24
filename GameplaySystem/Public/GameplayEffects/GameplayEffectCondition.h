@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -8,7 +8,7 @@
 class UGameplayEffect;
 class UGameplaySystemComponent;
 
-#define EXPAND_CONDITION_PARAMS(ParamsToExpand, GameplaySystemPropertyName, GameplayEffectPropertyName)	\
+#define EXPAND_CONDITION_PARAMS(ParamsToExpand, GameplaySystemPropertyName, GameplayEffectPropertyName)								\
 UGameplaySystemComponent* GameplaySystem = ParamsToExpand.GameplaySystem;															\
 const UGameplayEffect* GameplayEffect = ParamsToExpand.GameplayEffect;																\
 

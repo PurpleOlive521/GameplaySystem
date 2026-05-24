@@ -1,25 +1,21 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "LatentCurveEvaluatorBlueprintLibrary.h"
 #include "Kismet/GameplayStatics.h"
 
-ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateLatentCurveEvaluator(UCurveFloat* InCurve, UObject* Owner, const FOnEvaluateSignature& OnUpdateEvaluationFunction, const FOnFinishedSignature& OnFinishedEvaluationFunction, float EndTime, bool bEvaluateWhenPaused)
+ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateLatentCurveEvaluator(UObject* Owner, const FLatentCurveEvaluatorParams& Params)
 {
 	ULatentCurveEvaluator* CurveEvaluator = NewObject<ULatentCurveEvaluator>(Owner, ULatentCurveEvaluator::StaticClass());
 
-	CurveEvaluator->AssignCurve(InCurve);
-	CurveEvaluator->SetUpdateDelegate(OnUpdateEvaluationFunction);
-	CurveEvaluator->SetFinishDelegate(OnFinishedEvaluationFunction);
-	CurveEvaluator->SetEndTime(EndTime);
-	CurveEvaluator->SetUpdatingPolicy(bEvaluateWhenPaused);
+	CurveEvaluator->SetProperties(Params);
 
 	return CurveEvaluator;
 }
 
-ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateAndPlayLatentCurveEvaluator(EEvaluatorPlayTypePins PlayType, UCurveFloat* InCurve, UObject* Owner, const FOnEvaluateSignature& OnUpdateEvaluationFunction, const FOnFinishedSignature& OnFinishedEvaluationFunction, float EndTime, bool bEvaluateWhenPaused)
+ULatentCurveEvaluator* ULatentCurveEvaluatorBlueprintLibrary::CreateAndPlayLatentCurveEvaluator(EEvaluatorPlayTypePins PlayType, UObject* Owner, const FLatentCurveEvaluatorParams& Params)
 {
-	ULatentCurveEvaluator* CreatedCurve = CreateLatentCurveEvaluator(InCurve, Owner, OnUpdateEvaluationFunction, OnFinishedEvaluationFunction, EndTime, bEvaluateWhenPaused);
+	ULatentCurveEvaluator* CreatedCurve = CreateLatentCurveEvaluator(Owner, Params);
 	ensure(CreatedCurve);
 
 	CreatedCurve->PlayByType(PlayType);

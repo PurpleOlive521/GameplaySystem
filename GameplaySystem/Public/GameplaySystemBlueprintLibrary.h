@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -48,15 +48,14 @@ public:
 
 	// See GameplayAbilitySlot.h
 	UFUNCTION(BlueprintCallable, Category = "GameplaySystem|AbilitySlot")
-	static bool ActivateAbility(UPARAM(ref) FGameplayAbilitySlot& Slot);
+	static bool ActivateAbility(UPARAM(ref) FGameplayAbilitySlotContainer& Container, const FGameplayTag& Tag);
+
+	UFUNCTION(BlueprintCallable, meta = (DisplayName = "Activate Ability With Activation Data"), Category = "GameplaySystem|AbilitySlot")
+	static bool ActivateAbility_ActivationData(UPARAM(ref) FGameplayAbilitySlotContainer& Container, const FGameplayTag& Tag, const FGameplayAbilityActivationData& ActivationData);
 
 	// See GameplayAbilitySlot.h
 	UFUNCTION(BlueprintCallable, Category = "GameplaySystem|AbilitySlot")
-	static void SetAbility(FGameplayAbilitySlot& SlotContainer, TSubclassOf<UGameplayAbility> Ability);
-
-	// See GameplayAbilitySlot.h
-	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "GameplaySystem|AbilitySlot")
-	static bool GetSlot(const FGameplayAbilitySlotContainer& SlotContainer, const FGameplayTag& SlotTag, FGameplayAbilitySlot& OutSlot);
+	static bool SetAbility(UPARAM(ref) FGameplayAbilitySlotContainer& Container, const FGameplayTag& Tag, TSubclassOf<UGameplayAbility> Ability);
 
 	// --- Attributes
 

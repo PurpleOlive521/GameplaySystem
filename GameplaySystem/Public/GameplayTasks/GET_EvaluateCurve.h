@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -30,7 +30,7 @@ public:
 	// @param bAlwaysEvaluateLastKey	Whether to evaluate the last key in the curve if ended prematurely.
 	// @param EndTime					The time we evaluate to. If left at -1, will evaluate till the last key in the curve.
 	UFUNCTION(BlueprintCallable, meta = (HidePin = "OwningEvent", DefaultToSelf = "OwningEvent", BlueprintInternalUseOnly = "true"), Category = "GameplayEvent|Tasks")
-	static UGET_EvaluateCurve* EvaluateCurve(EEvaluatorPlayTypePins PlayType, UGameplayEvent* OwningEvent, UCurveFloat* InCurve, bool bAlwaysEvaluateLastKey, float EndTime = -1.0f);
+	static UGET_EvaluateCurve* EvaluateCurve(EEvaluatorPlayTypePins PlayType, UGameplayEvent* OwningEvent, UCurveFloat* InCurve, bool bAlwaysEvaluateLastKey, bool bScaleToEndTime, float EndTime = -1.0f);
 
 	virtual void Activate() override;
 
@@ -56,9 +56,8 @@ protected:
 	UPROPERTY()
 	TObjectPtr<ULatentCurveEvaluator> Evaluator = nullptr;
 
-	TObjectPtr<UCurveFloat> Curve = nullptr;
-
-	float EndTime = -1.0f;
+	UPROPERTY()
+	FLatentCurveEvaluatorParams Params;
 
 	bool bAlwaysEvaluateLastKey = false;
 

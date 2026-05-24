@@ -1,11 +1,10 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayEventBlueprintLibrary.h"
 #include "GameplayEventSubsystem.h"
 #include "Kismet/GameplayStatics.h"
 #include "DevelopmentTypes.h"
-
 
 FGameplayEventHandle UGameplayEventBlueprintLibrary::TriggerEvent(TSubclassOf<UGameplayEvent> EventClass, UObject* Owner)
 {
@@ -19,7 +18,19 @@ FGameplayEventHandle UGameplayEventBlueprintLibrary::TriggerEvent_ActivationData
 	return EventSubsystem->TriggerEvent_ActivationData(EventClass, Owner, ActivationData);
 }
 
-bool UGameplayEventBlueprintLibrary::AbortEvent(const FGameplayEventHandle& Handle, UObject* WorldObject)
+UGameplayEvent* UGameplayEventBlueprintLibrary::GetEventFromHandle(const UObject* WorldObject, const FGameplayEventHandle& Handle)
+{
+	UGameplayEventSubsystem* EventSubsystem = GetGameplayEventSubsystem(WorldObject);
+	return EventSubsystem->GetEventFromHandle(Handle);
+}
+
+void UGameplayEventBlueprintLibrary::GetEventsFromHandles(const UObject* WorldObject, const TArray<FGameplayEventHandle>& Handles, TArray<UGameplayEvent*> OutEvents)
+{
+	UGameplayEventSubsystem* EventSubsystem = GetGameplayEventSubsystem(WorldObject);
+	EventSubsystem->GetEventsFromHandles(Handles, OutEvents);
+}
+
+bool UGameplayEventBlueprintLibrary::AbortEvent(const UObject* WorldObject, const FGameplayEventHandle& Handle)
 {
 	if (!Handle.IsValid())
 	{
@@ -75,7 +86,21 @@ UGameInstance* UGameplayEventBlueprintLibrary::GetGameInstanceForEvent(const UOb
 	return UGameplayStatics::GetGameInstance(WorldContextObject);
 }
 
-inline UGameplayEventSubsystem* UGameplayEventBlueprintLibrary::GetGameplayEventSubsystem(UObject* WorldContextObject)
+UNiagaraComponent* UGameplayEventBlueprintLibrary::SpawnSystemAtLocation(const UObject* WorldContextObject, class UNiagaraSystem* SystemTemplate, FVector Location, FRotator Rotation, FVector Scale, bool bAutoDestroy, bool bAutoActivate, ENCPoolMethod PoolingMethod, bool bPreCullCheck)
+{
+	if (WorldContextObject)
+	{
+		if (UWorld* World = WorldContextObject->GetWorld()) 
+		{
+			return UNiagaraFunctionLibrary::SpawnSystemAtLocation(WorldContextObject, SystemTemplate, Location, Rotation, Scale, bAutoDestroy, bAutoActivate, PoolingMethod, bPreCullCheck);
+		}
+	}
+
+	return nullptr;
+}
+
+inline UGameplayEventSubsystem* UGameplayEventBlueprintLibrary::GetGameplayEventSubsystem(const UObject* WorldContextObject)
 {
 	return UGameplayEventSubsystem::Get(WorldContextObject);
 }
+

@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -37,20 +37,21 @@ public:
 
 	FAttributeEffect(EAttributeType Attribute, float Value, EEffectApplicationType ApplicationType, ETargetValue Target);
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, SaveGame)
 	EAttributeType Attribute = EAttributeType::EAT_Health;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, SaveGame)
 	float Value = 0;
 
 	// The change this AttributeEffect has applied
+	UPROPERTY(SaveGame)
 	float BonusValue = 0;
 
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, SaveGame)
 	EEffectApplicationType ApplicationType = EEffectApplicationType::EEAT_Addition;
 
 	// The property that the Effect is performed on.
-	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, SaveGame)
 	ETargetValue Target = ETargetValue::ETV_BaseValue;
 	
 	// Applies the effect to the Attribute. 

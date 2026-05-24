@@ -1,9 +1,10 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
 #include "Serialization/NameAsStringProxyArchive.h"
+#include "SaveableObjectInterface.h"
 
 /**
  * A proxy archive that ensures that all object reference types are stored as a SoftObjectPath.
@@ -17,7 +18,6 @@ struct TSaveGameProxyArchive final : public FNameAsStringProxyArchive
 	{
 		// Setting this hints a Serialize method to only serialize SaveGame properties
 		ArIsSaveGame = true;
-		//ArNoDelta = true; ?
 	}
 
 	/** Allows the archive to redirect any object (used for redirecting spawned actors). */
@@ -33,16 +33,19 @@ struct TSaveGameProxyArchive final : public FNameAsStringProxyArchive
 	{
 		Value.SerializePath(*this);
 
-		// If we have a defined core redirect, make sure that it's applied
-		if (bIsLoading && !Value.IsNull())
+		if (LOADING)
 		{
-			Value.FixupCoreRedirects();
-		}
+			// If we have a defined core redirect, make sure that it's applied
+			if (!Value.IsNull())
+			{
+				Value.FixupCoreRedirects();
+			}
 
-		if (bIsLoading && Redirects.Contains(Value))
-		{
-			// Actually perform the redirect
-			Value = Redirects[Value];
+			if (Redirects.Contains(Value))
+			{
+				// Actually perform the redirect
+				Value = Redirects[Value];
+			}
 		}
 
 		return *this;
@@ -52,14 +55,14 @@ struct TSaveGameProxyArchive final : public FNameAsStringProxyArchive
 	{
 		FSoftObjectPath Path;
 
-		if (!bIsLoading)
+		if (SAVING)
 		{
 			Path = Value.ToSoftObjectPath();
 		}
 
 		*this << Path;
 
-		if (bIsLoading)
+		if (LOADING)
 		{
 			Value = FSoftObjectPtr(Path);
 		}
@@ -100,14 +103,14 @@ private:
 	{
 		FSoftObjectPath Path;
 
-		if (!bIsLoading)
+		if (SAVING)
 		{
 			Path = ToSoftObjectPath(Value);
 		}
 
 		*this << Path;
 
-		if (bIsLoading)
+		if (LOADING)
 		{
 			UObject* Object = Path.ResolveObject();
 			Value = Object;

@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "LatentCurveEvaluator.h"
@@ -40,7 +40,7 @@ UWorld* ULatentCurveEvaluator::GetTickableGameObjectWorld() const
 
 bool ULatentCurveEvaluator::IsTickableWhenPaused() const
 {
-    return bEvaluateWhenPaused;
+    return Params.bEvaluateWhenPaused;
 }
 
 //FTickableObject End
@@ -58,19 +58,19 @@ void ULatentCurveEvaluator::TickCurve(float DeltaTime)
     }
     
     const float Coefficient = Direction == EPlayDirection::EPD_Forward ? 1.0f : -1.0f;
-    EvaluatedTime += DeltaTime * Coefficient;
+    EvaluatedTime += DeltaTime * Coefficient * TimeScale;
 
     SetEvaluatedTime(EvaluatedTime);
 
     const float EvaluatedValue = EvaluateCurve();
 
-    OnUpdateDelegate.ExecuteIfBound(EvaluatedValue);
+    Params.OnEvaluateDelegate.ExecuteIfBound(EvaluatedValue);
 
     const bool IsFinished = HasFinishedEvaluating();
     if (IsFinished)
     {
         bIsActive = false;
-        OnFinishedDelegate.Execute();
+        Params.OnFinishedDelegate.Execute();
     }
 }
 
@@ -123,7 +123,7 @@ void ULatentCurveEvaluator::PlayFromStart()
     bIsActive = true;
 
     StartTime = 0.0f;
-    EvaluatedTime = 0.0f;
+    EvaluatedTime = StartTime;
     TargetTime = GetLastKey();
     Direction = EPlayDirection::EPD_Forward;
 }
@@ -139,7 +139,7 @@ void ULatentCurveEvaluator::ReverseFromEnd()
     bIsActive = true;
 
     StartTime = GetLastKey();
-    EvaluatedTime = 0.0f;
+    EvaluatedTime = StartTime;
     TargetTime = 0.0f;
     Direction = EPlayDirection::EPD_Backward;
 }
@@ -158,8 +158,8 @@ void ULatentCurveEvaluator::Stop(bool bBroadcastLastKey)
     {
         // Move ahead to the target key and sample it's value, to ensure that we end in the same state as it would have if evaluated continously.
         const float EvaluatedValue = ForceEvaluateAt(TargetTime);
-        OnUpdateDelegate.Execute(EvaluatedValue);
-        OnFinishedDelegate.ExecuteIfBound();
+        Params.OnEvaluateDelegate.Execute(EvaluatedValue);
+        Params.OnFinishedDelegate.ExecuteIfBound();
     }
 }
 
@@ -214,39 +214,23 @@ bool ULatentCurveEvaluator::HasFinishedEvaluating() const
     return false;
 }
 
-void ULatentCurveEvaluator::AssignCurve(UCurveFloat* InCurve)
-{
-    check(InCurve);
-
-    Curve = InCurve;
-}
-
 void ULatentCurveEvaluator::SetEndTime(float InEndTime)
 {
     if(InEndTime == NO_TARGET_TIME)
     {
         // Assume that we want to evaluate until the end of the curve is hit
         TargetTime = GetLastKey();
+        TimeScale = 1.0f;
     }
     else
     {
 		TargetTime = InEndTime;
+
+        if (Params.bScaleToEndTime)
+        {
+            TimeScale = GetLastKey() / TargetTime;
+        }
     }
-}
-
-void ULatentCurveEvaluator::SetUpdateDelegate(const FOnEvaluateSignature& InUpdateDelegate)
-{
-	OnUpdateDelegate = InUpdateDelegate;
-}
-
-void ULatentCurveEvaluator::SetFinishDelegate(const FOnFinishedSignature& InFinishDelegate)
-{
-	OnFinishedDelegate = InFinishDelegate;
-}
-
-void ULatentCurveEvaluator::SetUpdatingPolicy(bool bInEvaluateWhenPaused)
-{
-	bEvaluateWhenPaused = bInEvaluateWhenPaused;
 }
 
 void ULatentCurveEvaluator::SetLeaderTickObject(FObjectTickFollowers& LeaderTickObject)
@@ -260,12 +244,12 @@ void ULatentCurveEvaluator::SetLeaderTickObject(FObjectTickFollowers& LeaderTick
 
 float ULatentCurveEvaluator::EvaluateCurve()
 {
-    if (!Curve)
+    if (!Params.Curve)
     {
         return 0.0f;
     }
 
-    return Curve->GetFloatValue(EvaluatedTime);
+    return Params.Curve->GetFloatValue(EvaluatedTime);
 }
 
 void ULatentCurveEvaluator::DisableTicking()
@@ -273,24 +257,30 @@ void ULatentCurveEvaluator::DisableTicking()
     bHasDisabledTicking = true;
 }
 
+void ULatentCurveEvaluator::SetProperties(const FLatentCurveEvaluatorParams& InParams)
+{
+    Params = InParams;
+    SetEndTime(Params.EndTime);
+}
+
 float ULatentCurveEvaluator::GetLastKey() const
 {
-    if (!Curve || Curve->FloatCurve.IsEmpty())
+    if (!Params.Curve || Params.Curve->FloatCurve.IsEmpty())
     {
         return 0.0f;
     }
 
-    return Curve->FloatCurve.GetLastKey().Time;
+    return Params.Curve->FloatCurve.GetLastKey().Time;
 }
 
 float ULatentCurveEvaluator::ForceEvaluateAt(float InTime)
 {
-    if (!Curve)
+    if (!Params.Curve)
     {
         return 0.0f;
     }
 
-    return Curve->GetFloatValue(InTime);
+    return Params.Curve->GetFloatValue(InTime);
 }
 
 void ULatentCurveEvaluator::SetEvaluatedTime(float InTime)

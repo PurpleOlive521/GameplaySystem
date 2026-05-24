@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -15,6 +15,7 @@
 class UGameplaySystemComponent;
 class UGameplayAbility;
 class UGameplayAbilityTask;
+class UGameplayEffect;
 
 DECLARE_LOG_CATEGORY_EXTERN(LogGameplayAbility, Log, All)
 
@@ -24,11 +25,14 @@ DECLARE_LOG_CATEGORY_EXTERN(LogGameplayAbility, Log, All)
 	UE_LOG(LogGameplayAbility, Verbosity, Format, ##__VA_ARGS__);	\
 }
 
-// Invoked when the gameplay ability ends
+// Invoked when the gameplay ability ended
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAbilityEndedSignature, UGameplayAbility* /* Ending Ability */);
 
 // Invoked when the gameplay ability is cancelled
 DECLARE_MULTICAST_DELEGATE(FOnAbilityCancelledSignature);
+
+// Invoked when the ability is either cancelled or ended, whichever one happens first.
+DECLARE_MULTICAST_DELEGATE_OneParam(FOnAbilityFinishedSignature, UGameplayAbility* /* Finished Ability */);
 
 // Used to notify ability state tasks that a state is being ended
 DECLARE_MULTICAST_DELEGATE_OneParam(FOnAbilityStateEndedSignature, FName /* Ending State */);
@@ -267,20 +271,27 @@ public:
 
 	FGameplaySystemActorInfo* GetCurrentActorInfo() const;
 
+	UFUNCTION(BlueprintCallable, Category = "GameplayAbility")
+	void SendAbilityNotify(FName Notify);
+
+	// The tags applied to the Ability itself and any instances created from it.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "GameplayAbility|GameplayTags")
+	FGameplayTagContainer AbilityTags;
+
 	// Tags that block this Ability from activating if present in the activating GameplaySystemComponent.
-	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|Tags")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|GameplayTags")
 	FGameplayTagContainer ActivationBlockedTags;
 
 	// Any active Abilities with these tags in the activating GameplaySystemComponent are cancelled when this Ability is activated.
-	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|Tags")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|GameplayTags")
 	FGameplayTagContainer CancelAbilitiesWithTag;
 
 	// Will forcibly cancel any matching abilities if true, disregarding whether the ability currently allows cancelling or not.
-	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|Tags")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|GameplayTags")
 	bool bIsAuthoritativeCancel = false;
 
 	// Any Abilities with these tags are blocked from activating in the activating GameplaySystemComponent.
-	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|Tags")
+	UPROPERTY(BlueprintReadOnly, EditAnywhere, Category = "GameplayAbility|GameplayTags")
 	FGameplayTagContainer BlockAbilitiesWithTag;
 
 protected:
@@ -320,6 +331,12 @@ protected:
 	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "Blueprint Remove Ability Ended Modifiers"), Category = "GameplayAbility")
 	void K2_RemoveAbilityEndedModifiers();
 
+	virtual void ReceiveAbilityNotify(FName Notify);
+
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "Blueprint Receive Ability Notify"), Category = "GameplayAbility")
+	void K2_ReceiveAbilityNotify(FName Notify);
+
+
 	// Returns true if we are a static instance that should not be modified or have state.
 	bool IsStaticInstance() const;
 
@@ -345,9 +362,13 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "GameplayAbility")
 	EInstancingPolicy InstancingPolicy = EInstancingPolicy::EIP_InstancedPerActor;
 
-	// The tags applied to the Ability itself and any instances created from it.
-	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "GameplayAbility")
-	FGameplayTagContainer AbilityTags;
+	// Applied when the ability is either cancelled or ended.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "GameplayAbility|GameplayEffects")
+	TArray<TSubclassOf<UGameplayEffect>> AbilityFinishedEffects;
+
+	// Applied when the ability is activated
+	UPROPERTY(BlueprintReadWrite, EditAnywhere, Category = "GameplayAbility|GameplayEffects")
+	TArray<TSubclassOf<UGameplayEffect>> AbilityActivatedEffects;
 
 	UPROPERTY()
 	TArray<TObjectPtr<UGameplayTask>> ActiveTasks;
@@ -378,6 +399,8 @@ public:
 	FOnAbilityEndedSignature OnAbilityEndedDelegate;
 
 	FOnAbilityCancelledSignature OnAbilityCancelledDelegate;
+
+	FOnAbilityFinishedSignature OnAbilityFinishedDelegate;
 
 	FOnAbilityStateEndedSignature OnAbilityStateEndedDelegate;
 };

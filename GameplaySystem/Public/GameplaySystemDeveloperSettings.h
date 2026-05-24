@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -16,7 +16,7 @@ struct FAttributeConfiguration
 	UPROPERTY(EditAnywhere)
 	EAttributeType MaxValueReference = EAttributeType::EAT_NONE;
 
-	// When the MaxValueReference is increased, scale this Attribute up too to keep the values proportional. 
+	// When the MaxValueReference is increased, scale this Attribute up too ensure proportionality.
 	// Only applied in certain scenarios such as Level-ups. 
 	UPROPERTY(EditAnywhere)
 	bool bScaleWithMaxValue = false;
@@ -37,9 +37,18 @@ class GAMEPLAYSYSTEM_API UGameplaySystemDeveloperSettings : public UDeveloperSet
 
 public:
 
+	const UGameplaySystemProperties* GetDefaultProperties() const;
+
+	float GetGlobalAnimPlayRate() const;
+
 	// Defines how Attributes interact with eachother across ALL GameplaySystems. 
 	UPROPERTY(Config, EditAnywhere, Category = "Attributes")
 	TMap<EAttributeType, FAttributeConfiguration> AttributeSettings;
 
-	
+	// Fallback properties used when a GameplaySystem does not have a specified asset.
+	UPROPERTY(Config, EditAnywhere)
+	TSoftObjectPtr<const UGameplaySystemProperties> DefaultProperties;
+
+	UPROPERTY(Config, EditAnywhere)
+	float GlobalAnimPlayRate = 1.0f;
 };

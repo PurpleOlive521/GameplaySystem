@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -53,6 +53,7 @@ public:
 	// --- Begin USubsystem Interface
 	virtual void Initialize(FSubsystemCollectionBase& Collection) override;
 	virtual void Deinitialize() override;
+	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const;
 	// --- End USubsystem Interface
 
 	// --- Begin FTickableObject Interface
@@ -141,7 +142,6 @@ protected:
 	UPROPERTY()
 	TMap<FGameplayEventHandle, TObjectPtr<UGameplayEvent>> EventMap;
 
-	// TODO: Rewrite to not use a WeakObjectPtr as key
 	TMap<TWeakObjectPtr<AActor>, FActorGameplayEventContainer> PerActorEventMap;
 
 	FGameplayTagSystem GloballyBlockedEventTags;

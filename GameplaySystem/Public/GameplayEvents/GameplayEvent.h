@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -68,6 +68,8 @@ public:
 
 	void Init(UObject* InOwningObject);
 
+	bool ShouldTick() const;
+
 	void Tick(float DeltaTime);
 
 	// Activates the GameplayEvent.
@@ -83,6 +85,9 @@ public:
 	bool TryAbortEvent();
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
+	void SendEventNotify(FName Notify);
+
+	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
 	UObject* GetOwningObject() const;
 
 	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
@@ -92,9 +97,11 @@ public:
 	bool HasOwningActor() const;
 
 	// Can return nullptr if not owned by an Actor.
+	// For static events, always returns nullptr. Instead use the Owner parameter for static events.
 	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
 	AActor* GetOwnerAsActor() const;
 
+	// For static events, always asserts. Instead use the Owner parameter for static events.
 	UFUNCTION(BlueprintCallable, Category = "GameplayEvent")
 	AActor* GetOwnerAsActor_Checked() const;
 
@@ -202,13 +209,13 @@ protected:
 
 	// Should only be implemented for GameplayEvents with EventInstancingPolicy set to Static.
 	// Does nothing when set to other policy's.
-	virtual void StaticTriggerEvent(const UObject* WorldContextObject, const FGameplayEventActivationData& ActivationData) const;
+	virtual void StaticTriggerEvent(const UObject* Owner, const FGameplayEventActivationData& ActivationData) const;
 
 	// Always called after the native StaticTriggerEvent.
 	// Should only be implemented for GameplayEvents with EventInstancingPolicy set to Static.
 	// Does nothing when set to other policy's.
 	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "BP Static Trigger Event"), Category = "GameplayEvent")
-	void K2_StaticTriggerEvent(const UObject* WorldContextObject, const FGameplayEventActivationData& ActivationData) const;
+	void K2_StaticTriggerEvent(const UObject* Owner, const FGameplayEventActivationData& ActivationData) const;
 
 	virtual void EndEvent();
 
@@ -221,6 +228,11 @@ protected:
 	// Always called after the native AbortEvent.
 	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "BP Abort Event"), Category = "GameplayEvent")
 	void K2_AbortEvent();
+
+	virtual void ReceiveEventNotify(FName Notify);
+
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "Blueprint Receive Event Notify"), Category = "GameplayEvent")
+	void K2_ReceiveEventNotify(FName Notify);
 
 	// Prematurely end the GameplayEvent, removing it from the system.
 	// Intended to be called by the GameplayEvent itself once it's finished in the case that it has no duration.

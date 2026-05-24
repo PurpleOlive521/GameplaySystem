@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayTagOwnerInterface.h"
@@ -23,22 +23,27 @@ void IGameplayTagOwnerInterface::AppendTags(FGameplayTagContainer const& Other)
 	return;
 }
 
-bool IGameplayTagOwnerInterface::HasTag(const FGameplayTag& TagToCheck)
+bool IGameplayTagOwnerInterface::HasTag(const FGameplayTag& TagToCheck) const
 {
 	return false;
 }
 
-bool IGameplayTagOwnerInterface::HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst)
+bool IGameplayTagOwnerInterface::HasAllTags(const FGameplayTagContainer& TagsToCheckAgainst) const
 {
 	return false;
 }
 
-int IGameplayTagOwnerInterface::GetTagCount(const FGameplayTag& TagToCheck)
+int32 IGameplayTagOwnerInterface::GetTagCount(const FGameplayTag& TagToCheck) const
 {
 	return 0;
 }
 
-int IGameplayTagOwnerInterface::GetTotalTagCount()
+void IGameplayTagOwnerInterface::SetTagCount(const FGameplayTag& TagToSet, int32 NewCount)
+{
+	return;
+}
+
+int32 IGameplayTagOwnerInterface::GetTotalTagCount() const
 {
 	return 0;
 }

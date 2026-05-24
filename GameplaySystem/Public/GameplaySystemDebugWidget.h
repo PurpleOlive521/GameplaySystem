@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -17,6 +17,10 @@ struct FEnhancedInputActionEventBinding;
 class UGameplayEventSubsystem;
 
 constexpr int PAGE_START_INDEX = 1;
+
+// Can affect performance when using the debug view, since we recalculate attributes every frame with this enabled.
+// Will ensure that the displayed attributes are accurate to their true value.
+constexpr bool FORCE_RECALCULATE_ATTRIBUTES = false;
 
 USTRUCT(BlueprintType)
 struct GAMEPLAYSYSTEM_API FAttributeDisplayInfo
@@ -50,10 +54,6 @@ struct GAMEPLAYSYSTEM_API FEventsDisplayInfo
 	FString InactiveEvents = "";
 };
 
-// Can affect performance when using the debug view, since we recalculate attributes every frame with this enabled.
-// Will ensure that the displayed attributes are accurate to their true value.
-constexpr bool FORCE_RECALCULATE_ATTRIBUTES = false;
-
 /**
  * --- Widget that displays critical system information for easier debugging. 
  * Defaults to the players GameplaySystemComponent, but can be used to cycle through all found GameplaySystemComponent in the level.
@@ -65,7 +65,7 @@ class GAMEPLAYSYSTEM_API UGameplaySystemDebugWidget : public UUserWidget
 {
 	GENERATED_BODY()
 
-	// We rely on statics to keep the candidates independent of any one widget instance, so that we do not need to keep track of the widgets lifetime between activation.
+	// We rely on statics to keep the candidates independent of any one widget instance, so that we do not need to manage our lifetime between possible widget instances.
 
 	// TODO: Make sure that cleaning the array wont mess with other active widgets and their indices.
 	static void CleanSystemCandidates();
@@ -81,26 +81,30 @@ public:
 	virtual void NativeTick(const FGeometry& MyGeometry, float InDeltaTime) override;
 
 	// --- End UUUserWidget interface
+
+	virtual void OnEnabledTick(const FGeometry& MyGeometry, float InDeltaTime) {};
+
+	virtual void OnBoundToGameplaySystem(UGameplaySystemComponent* GameplaySystem) {};
 	
 	// Only called when it's safe to update the GameplayEvent display.
-	UFUNCTION(BlueprintImplementableEvent, Category = "DebugWidget")
-	void TickGameplayEventDisplay(float DeltaTime);
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "Tick GameplayEvent Display"), Category = "DebugWidget")
+	void K2_TickGameplayEventDisplay(float DeltaTime);
 
 	// Only called when it's safe to update the GameplaySystem display.
-	UFUNCTION(BlueprintImplementableEvent, Category = "DebugWidget")
-	void TickGameplaySystemDisplay(float DeltaTime);
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "Tick GameplaySystem Display"), Category = "DebugWidget")
+	void K2_TickGameplaySystemDisplay(float DeltaTime);
 
 	// Should not rely on the GameplaySystem being valid
-	UFUNCTION(BlueprintImplementableEvent, Category = "DebugWidget")
-	void TickGenericDisplay(float DeltaTime);
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "Tick Generic Display"), Category = "DebugWidget")
+	void K2_TickGenericDisplay(float DeltaTime);
 
 	// Removes stale information from the display in case a new GameplaySystem is never found and updates the UI to clear itself.
-	UFUNCTION(BlueprintImplementableEvent, Category = "DebugWidget")
-	void ClearDisplay();
+	UFUNCTION(BlueprintImplementableEvent, meta = (DisplayName = "Clear Display"), Category = "DebugWidget")
+	void K2_ClearDisplay();
 
 	// Cycle to a new page. 1-indexed.
-	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, Category = "DebugWidget")
-	void CycleMenu(int PageIndex);
+	UFUNCTION(BlueprintImplementableEvent, BlueprintCallable, meta = (DisplayName = "Cycle Menu"), Category = "DebugWidget")
+	void K2_CycleMenu(int PageIndex);
 
 	// Gets some basic information about the GameplaySystem and the owning Actor.
 	UFUNCTION(BlueprintCallable, BlueprintPure, Category = "DebugWidget")
@@ -136,6 +140,23 @@ public:
 
 protected:
 
+	// Sets up input bindings, and binds to the player's GameplaySystemComponent if it has one.
+	void BindToPlayer();
+
+	// Binds the widget to a new GameplaySystemComponent. Adds the component to the list of candidates if not already present.
+	void BindToGameplaySystem(UGameplaySystemComponent* NewSystem);
+
+	void BindToGameplayEventSubsystem();
+
+	// Toggles the widgets visiblity between Hidden and Visible.
+	void ToggleWidget();
+
+	// Cycles through all GameplaySystemComponents in the Level.
+	void CycleDebugTarget();
+
+	// Cycles through the currently displayed page of the widget.
+	void CycleMenu();
+
 	UPROPERTY(BlueprintReadOnly, Category = "DebugWidget")
 	bool bEnabled = false;
 
@@ -160,34 +181,15 @@ protected:
 
 	uint32 CycleTargetHandle = 0;
 
-private:
-
-	// Sets up input bindings, and binds to the player's GameplaySystemComponent if it has one.
-	void BindToPlayer();
-
-	// Binds the widget to a new GameplaySystemComponent. Adds the component to the list of candidates if not already present.
-	void BindToGameplaySystem(UGameplaySystemComponent* NewSystem);
-
-	void BindToGameplayEventSubsystem();
-
-	// Toggles the widgets visiblity between Hidden and Visible.
-	void ToggleWidget();
-
-	// Cycles through all GameplaySystemComponents in the Level.
-	void CycleDebugTarget();
-
-	// Cycles through the currently displayed page of the widget.
-	void CycleMenu();
-
 	int SystemCandidateIndex = 0;
 
 	int DisplayedPage = 1;
 
-	TWeakObjectPtr<UGameplaySystemComponent> BoundGameplaySystem;
+	TWeakObjectPtr<UGameplaySystemComponent> BoundGameplaySystem = nullptr;
 	
-	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> UsedInputSystem;
+	TWeakObjectPtr<UEnhancedInputLocalPlayerSubsystem> UsedInputSystem = nullptr;
 
-	TWeakObjectPtr<UEnhancedInputComponent> UsedInputComponent;
+	TWeakObjectPtr<UEnhancedInputComponent> UsedInputComponent = nullptr;
 
-	TWeakObjectPtr<UGameplayEventSubsystem> BoundEventSubsystem;
+	TWeakObjectPtr<UGameplayEventSubsystem> BoundEventSubsystem = nullptr;
 };

@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -22,13 +22,11 @@ class GAMEPLAYSYSTEM_API UAnimNotifyState_TimedGameplayTag : public UGSAnimNotif
 
 public:
 
+	UAnimNotifyState_TimedGameplayTag();
+
 	// --- Begin UAnimNotifyState Interface
 	virtual void NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float TotalDuration, const FAnimNotifyEventReference& EventReference) override;
 	virtual void NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
-
-#if WITH_EDITOR
-	virtual bool ShouldFireInEditor() override;
-#endif
 
 	// --- End UAnimNotifyState Interface
 

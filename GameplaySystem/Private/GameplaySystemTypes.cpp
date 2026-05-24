@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplaySystemTypes.h"
@@ -53,38 +53,129 @@ UAnimInstance* FGameplaySystemActorInfo::GetAnimInstance() const
 	return nullptr;
 }
 
-void FGameplaySystemAnimMontageInfo::AssignMontage(UAnimMontage* NewMontage, UGameplayAbility* Ability)
+UCharacterMovementComponent* FGameplaySystemActorInfo::GetCharacterMovement() const
 {
-	CurrentMontage = NewMontage;
-	AnimatingAbility = Ability;
+	return MovementComponent.Get();
 }
 
-void FGameplaySystemAnimMontageInfo::AssignOverrideAbility(UGameplayAbility* Ability)
+void FAnimationGroupInfo::Assign(UAnimMontage* NewMontage, UGameplayAbility* Ability)
 {
-	AnimatingAbility = Ability;
+	CurrentMontage = NewMontage;
+	AnimatingAbility = MakeWeakObjectPtr(Ability);
+}
+
+void FAnimationGroupInfo::SetOverride(UGameplayAbility* Ability)
+{
+	AnimatingAbility = MakeWeakObjectPtr(Ability);
 	bAbilityIsOverriding = true;
 }
 
-bool FGameplaySystemAnimMontageInfo::IsActiveMontage(UAnimMontage* InMontage) const
-{
-	// We want any querying ability to be routed to the overriding ability, even if it's not the same montage.
-	if (bAbilityIsOverriding)
-	{
-		return true;
-	}
+const FName FGameplaySystemAnimMontageInfo::DefaultGroup = FName(TEXT("DefaultGroup"));
 
-	return InMontage == CurrentMontage;
+void FGameplaySystemAnimMontageInfo::AssignMontage(UAnimMontage* NewMontage, UGameplayAbility* Ability)
+{
+	const FName Group =  NewMontage->GetGroupName();
+	FAnimationGroupInfo& GroupInfo = GetGroup(Group);
+
+	GroupInfo.Assign(NewMontage, Ability);
 }
 
-UGameplayAbility* FGameplaySystemAnimMontageInfo::GetAnimatingAbility() const
+void FGameplaySystemAnimMontageInfo::SetOverrideAbility(UGameplayAbility* Ability, FName Group)
 {
-	// While overriding there will not be a current montage, but we still want to return the ability.
-	if (bAbilityIsOverriding || CurrentMontage)
+	FAnimationGroupInfo& GroupInfo = GetGroup(Group);
+
+	GroupInfo.SetOverride(Ability);
+}
+
+bool FGameplaySystemAnimMontageInfo::IsActiveMontage(FName Group, UAnimSequenceBase* InAnimation) const
+{
+	if (HasGroup(Group))
 	{
-		return AnimatingAbility.Get();
+		const FAnimationGroupInfo GroupInfo = GetGroup(Group);
+
+		// We don't know ahead of time what animation will be triggered in the group, so always return true
+		if (GroupInfo.bAbilityIsOverriding)
+		{
+			return true;
+		}
+
+		return GroupInfo.CurrentMontage == InAnimation;
+	}
+
+	return false;
+}
+
+bool FGameplaySystemAnimMontageInfo::IsAnimatingAbility(const UGameplayAbility* Ability) const
+{
+	for (const auto& [Name, Group] : AnimationGroups)
+	{
+		if (Group.AnimatingAbility == Ability)
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+UGameplayAbility* FGameplaySystemAnimMontageInfo::GetAnimatingAbility(FName Group) const
+{
+	if (HasGroup(Group))
+	{
+		const FAnimationGroupInfo GroupInfo = GetGroup(Group);
+
+		if (GroupInfo.bAbilityIsOverriding || GroupInfo.CurrentMontage)
+		{
+			return GroupInfo.AnimatingAbility.Get();
+		}
 	}
 
 	return nullptr;
+}
+
+void FGameplaySystemAnimMontageInfo::RemoveGroupsByAbility(UGameplayAbility* Ability)
+{
+	TArray<FName> GroupsToRemove;
+
+	for (const auto& [Name, Group] : AnimationGroups)
+	{
+		if (Group.AnimatingAbility == Ability)
+		{
+			GroupsToRemove.Add(Name);
+		}
+	}
+
+	for (const auto& Group : GroupsToRemove)
+	{
+		RemoveGroup(Group);
+	}
+}
+
+FAnimationGroupInfo& FGameplaySystemAnimMontageInfo::GetGroup(FName Group)
+{
+	if (not AnimationGroups.Contains(Group))
+	{
+		AnimationGroups.Add(Group);
+	}
+
+	return AnimationGroups.FindChecked(Group);
+}
+
+FAnimationGroupInfo FGameplaySystemAnimMontageInfo::GetGroup(FName Group) const
+{
+	return AnimationGroups.FindRef(Group);
+}
+
+bool FGameplaySystemAnimMontageInfo::HasGroup(FName Group) const
+{
+	return AnimationGroups.Contains(Group);
+}
+
+bool FGameplaySystemAnimMontageInfo::RemoveGroup(FName Group)
+{
+	const int32 Count = AnimationGroups.Remove(Group);
+
+	return Count > 0;
 }
 
 FGameplaySystemSnapshot::FGameplaySystemSnapshot(UGameplaySystemComponent* GameplaySystem)

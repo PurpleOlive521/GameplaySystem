@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayEventSubsystem.h"
@@ -22,6 +22,15 @@ void UGameplayEventSubsystem::Deinitialize()
     FCoreUObjectDelegates::PreGarbageCollectConditionalBeginDestroy.RemoveAll(this);
     
     Super::Deinitialize();
+}
+
+bool UGameplayEventSubsystem::DoesSupportWorldType(const EWorldType::Type WorldType) const
+{
+    return WorldType == EWorldType::Game || 
+        WorldType == EWorldType::Editor || 
+        WorldType == EWorldType::PIE || 
+        WorldType == EWorldType::EditorPreview ||
+        WorldType == EWorldType::GamePreview;
 }
 
 void UGameplayEventSubsystem::Tick(float DeltaTime)
@@ -221,7 +230,11 @@ inline static bool FilterByPredicate(std::function<bool(const UGameplayEvent*)> 
 
 FGameplayEventHandle UGameplayEventSubsystem::TriggerEvent_Internal(TSubclassOf<UGameplayEvent> EventClass, UObject* Owner, const FGameplayEventActivationData& ActivationData)
 {
-    check(EventClass);
+    if (!EventClass)
+    {
+        ensureNoEntry();
+        return FGameplayEventHandle();
+    }
 
     ensure(Owner);
 
@@ -270,6 +283,11 @@ FGameplayEventHandle UGameplayEventSubsystem::TriggerEvent_Internal(TSubclassOf<
 
 void UGameplayEventSubsystem::TickEvent(UGameplayEvent* Event, float DeltaTime, float AbsoluteDeltaTime, float GlobalDeltaTime)
 {
+    if (not Event->ShouldTick())
+    {
+        return;
+    }
+
     switch (Event->TickSource)
     {
     case(ETickSource::ETS_GlobalDeltaTime):

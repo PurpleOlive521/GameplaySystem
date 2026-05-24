@@ -1,4 +1,4 @@
-// Copyright Epic Games, Inc. All Rights Reserved.
+// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
 
 // All credit to Unreal's GameplayAbilitySystem.
 

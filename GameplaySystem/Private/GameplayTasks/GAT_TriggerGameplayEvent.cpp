@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayTasks/GAT_TriggerGameplayEvent.h"
@@ -41,7 +41,14 @@ void UGAT_TriggerGameplayEvent::Activate()
 	if (!EventHandle.IsValid())
 	{
 		EndTask();
+		return;
 	}
+
+	UGameplayEvent* ActiveEvent = Subsystem->GetEventFromHandle(EventHandle);
+	check(ActiveEvent);
+
+	ActiveEvent->OnEventAbortedDelegate.AddUObject(this, &UGAT_TriggerGameplayEvent::AbortEvent);
+	ActiveEvent->OnEventEndedDelegate.AddUObject(this, &UGAT_TriggerGameplayEvent::OnEventEnded);
 }
 
 void UGAT_TriggerGameplayEvent::ExternalCancel()
@@ -56,6 +63,13 @@ void UGAT_TriggerGameplayEvent::OnDestroy(bool bAbilityEnded)
 	if (Ability)
 	{
 		Ability->OnAbilityCancelledDelegate.Remove(AbilityCancelledHandle);
+	}
+
+	UGameplayEventSubsystem* Subsystem = UGameplayEventSubsystem::Get(Ability);
+	if (UGameplayEvent* ActiveEvent = Subsystem->GetEventFromHandle(EventHandle))
+	{
+		ActiveEvent->OnEventAbortedDelegate.RemoveAll(this);
+		ActiveEvent->OnEventEndedDelegate.RemoveAll(this);
 	}
 
 	if (bAbilityEnded && bAbortOnEnd)
@@ -103,6 +117,14 @@ void UGAT_TriggerGameplayEvent::AbortEvent()
 
 		bWasAborted = true;
 		EndTask();
+	}
+}
+
+void UGAT_TriggerGameplayEvent::OnEventEnded(UGameplayEvent* Event)
+{
+	if (ShouldBroadcastAbilityTaskDelegates())
+	{
+		OnGameplayEventEndedDelegate.Broadcast();
 	}
 }
 

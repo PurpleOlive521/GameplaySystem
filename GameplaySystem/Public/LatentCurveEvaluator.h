@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -14,6 +14,9 @@ class UCurveFloat;
 
 constexpr float NO_TARGET_TIME = -1.0f;
 
+DECLARE_DYNAMIC_DELEGATE_OneParam(FOnEvaluateSignature, float, Value);
+DECLARE_DYNAMIC_DELEGATE(FOnFinishedSignature);
+
 UENUM(BlueprintType)
 enum class EPlayDirection : uint8
 {
@@ -21,7 +24,7 @@ enum class EPlayDirection : uint8
 	EPD_Backward	UMETA(DisplayName = "Backward"),
 };
 
-UENUM()
+UENUM(BlueprintType)
 enum class EEvaluatorPlayTypePins : uint8
 {
 	// Resume playing. Same as PlayFromStart for newly created evaluators.
@@ -34,8 +37,32 @@ enum class EEvaluatorPlayTypePins : uint8
 	ReverseFromEnd,
 };
 
-DECLARE_DYNAMIC_DELEGATE_OneParam(FOnEvaluateSignature, float, Value);
-DECLARE_DYNAMIC_DELEGATE(FOnFinishedSignature);
+USTRUCT(BlueprintType)
+struct FLatentCurveEvaluatorParams
+{
+	GENERATED_BODY()
+
+	FLatentCurveEvaluatorParams() = default;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	TObjectPtr<UCurveFloat> Curve = nullptr;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	float EndTime = -1.0f;  
+
+	// Stretches or contracts the speed we evaluate the Curve at to match the EndTime.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	bool bScaleToEndTime = false;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	bool bEvaluateWhenPaused = false;
+
+	UPROPERTY(BlueprintReadWrite)
+	FOnEvaluateSignature OnEvaluateDelegate;
+
+	UPROPERTY(BlueprintReadWrite)
+	FOnFinishedSignature OnFinishedDelegate;
+};
 
 /**
  * Evaluates a CurveFloat, allowing objects to process on each update tick based on the curves value.
@@ -86,24 +113,13 @@ public:
 	bool HasFinishedEvaluating() const;
 
 	UFUNCTION(BlueprintCallable, Category = "LatentCurveEvaluator")
-	void AssignCurve(UCurveFloat* InCurve);
-
-	UFUNCTION(BlueprintCallable, Category = "LatentCurveEvaluator")
 	void SetEndTime(float InEndTime);
-
-	UFUNCTION(BlueprintCallable, Category = "LatentCurveEvaluator")
-	void SetUpdateDelegate(const FOnEvaluateSignature& InUpdateDelegate);
-
-	UFUNCTION(BlueprintCallable, Category = "LatentCurveEvaluator")
-	void SetFinishDelegate(const FOnFinishedSignature& InFinishDelegate);
-
-	UFUNCTION(BlueprintCallable, Category = "LatentCurveEvaluator")
-	void SetUpdatingPolicy(bool bInEvaluateWhenPaused);
 
 	// Will source the DeltaTime from Leader while evaluating, allowing the LatentCurveEvaluator to match the objects ticking rate.
 	UFUNCTION(BlueprintCallable, Category = "LatentCurveEvaluator")
 	void SetLeaderTickObject(UPARAM(ref) FObjectTickFollowers& LeaderTickObject);
 
+	// Get the time of the last available key.
 	float GetLastKey() const;
 
 	float ForceEvaluateAt(float InTime);
@@ -116,8 +132,14 @@ public:
 
 	void DisableTicking();
 
+	void SetProperties(const FLatentCurveEvaluatorParams& Params);
+
+protected:
+
+	UPROPERTY()
+	FLatentCurveEvaluatorParams Params;
+
 private:
-	TObjectPtr<UCurveFloat> Curve = nullptr;
 
 	FTickFollowerHandle TickFollowerHandle;
 
@@ -126,8 +148,6 @@ private:
 	float TargetTime = NO_TARGET_TIME;
 
 	float StartTime = 0.0f;
-
-	uint32 bEvaluateWhenPaused : 1 = false;
 	
 	uint32 bIsActive : 1 = false;
 
@@ -136,9 +156,8 @@ private:
 
 	// Some other non-leader object is responsible for ticking us directly
 	uint32 bHasDisabledTicking : 1 = false;
+
+	float TimeScale = 1.0f;
 	
 	EPlayDirection Direction = EPlayDirection::EPD_Forward;
-
-	FOnEvaluateSignature OnUpdateDelegate;
-	FOnFinishedSignature OnFinishedDelegate;
 };

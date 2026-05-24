@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -32,6 +32,9 @@ struct GAMEPLAYSYSTEM_API FGameplaySystemActorInfo
 	// Gets the AnimInstance from the SkeletalMeshComponent. Returns nullptr if none exists or no SkeletalMeshComponent is present.
 	UAnimInstance* GetAnimInstance() const;
 
+	// Gets the CharacterMovementComponent from the owning Actor. Returns nullptr if none exists.
+	UCharacterMovementComponent* GetCharacterMovement() const;
+
 	TWeakObjectPtr<AActor> OwningActor = nullptr;
 
 	TWeakObjectPtr<UGameplaySystemComponent> OwningComponent = nullptr;
@@ -42,6 +45,7 @@ struct GAMEPLAYSYSTEM_API FGameplaySystemActorInfo
 };
 
 // Data specific to the activation of this GameplayAbility.
+// Usually interpreted per ability, and does not need to match in usage with the property name.
 USTRUCT(BlueprintType)
 struct GAMEPLAYSYSTEM_API FGameplayAbilityActivationData
 {
@@ -51,6 +55,33 @@ struct GAMEPLAYSYSTEM_API FGameplayAbilityActivationData
 
 	UPROPERTY(BlueprintReadWrite)
 	TObjectPtr<AActor> Target = nullptr;
+
+	UPROPERTY(BlueprintReadWrite)
+	float Magnitude = 0.0f;
+
+	UPROPERTY(BlueprintReadWrite)
+	FVector Location = FVector::ZeroVector;
+};
+
+USTRUCT(BlueprintType)
+struct GAMEPLAYSYSTEM_API FAnimationGroupInfo
+{
+	GENERATED_BODY()
+
+	FAnimationGroupInfo() = default;
+
+	void Assign(UAnimMontage* NewMontage, UGameplayAbility* Ability);
+
+	void SetOverride(UGameplayAbility* Ability);
+
+	// The AnimMontage we are currently playing.
+	TObjectPtr<UAnimMontage> CurrentMontage;
+
+	// The ability that played the CurrentMontage.
+	TWeakObjectPtr<UGameplayAbility> AnimatingAbility;
+
+	// The AnimatingAbility will claim all incoming notifies for this slot while this is true.
+	bool bAbilityIsOverriding = false;
 };
 
 // Contains information about any AnimMontage that this GameplaySystem has activated, and which ability it was activated from.
@@ -61,26 +92,33 @@ struct GAMEPLAYSYSTEM_API FGameplaySystemAnimMontageInfo
 
 	FGameplaySystemAnimMontageInfo() = default;
 
+	static const FName DefaultGroup;
+
 	void AssignMontage(UAnimMontage* NewMontage, UGameplayAbility* Ability);
 
 	// Intended for use when blendspaces are in charge of the AnimMontage thats played and we want any triggered AnimNotify's to always route to this ability while active.
-	void AssignOverrideAbility(UGameplayAbility* Ability);
+	void SetOverrideAbility(UGameplayAbility* Ability, FName Group = DefaultGroup);
 
 	// Returns true if the given montage is the one currently being played by the GameplaySystem. 
-	bool IsActiveMontage(UAnimMontage* InMontage) const;
+	bool IsActiveMontage(FName Group, UAnimSequenceBase* InAnimation) const;
+
+	bool IsAnimatingAbility(const UGameplayAbility* Ability) const;
 
 	// Can return nullptr if not currently animating.
-	UGameplayAbility* GetAnimatingAbility() const;
+	UGameplayAbility* GetAnimatingAbility(FName Group = DefaultGroup) const;
 
-	// The AnimMontage we are currently playing.
-	TObjectPtr<UAnimMontage> CurrentMontage;
+	void RemoveGroupsByAbility(UGameplayAbility* Ability);
 
-	// The ability that played the CurrentMontage.
-	TWeakObjectPtr<UGameplayAbility> AnimatingAbility;
+	// Will create the requested Group if not found.
+	FAnimationGroupInfo& GetGroup(FName Group = DefaultGroup);
 
-	// Routes AnimNotifies from blendspaces to the correct ability. We have no way of knowing what AnimMontage the blendspace is playing,
-	// let alone which ability is responsible for triggering the blendspace. As such, an ability can "claim" all notifies while this is true.
-	bool bAbilityIsOverriding = false;
+	FAnimationGroupInfo GetGroup(FName Group = DefaultGroup) const;
+
+	bool HasGroup(FName Group) const;
+
+	bool RemoveGroup(FName Group);
+
+	TMap<FName, FAnimationGroupInfo> AnimationGroups;
 };
 
 // Caches select properties for comparing system state at different points in time. Mainly intended for GameplayEffects.
@@ -177,5 +215,5 @@ protected:
 
 namespace GameplaySystemConstants
 {
-	constexpr int NO_LEVEL = -1;
+	constexpr int NO_LEVEL = 0;
 }

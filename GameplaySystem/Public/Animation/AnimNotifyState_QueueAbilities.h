@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -28,16 +28,14 @@ class GAMEPLAYSYSTEM_API UAnimNotifyState_QueueAbilities : public UGSAnimNotifyS
 
 public:
 
+	UAnimNotifyState_QueueAbilities();
+
 	// --- Begin UAnimNotifyState Interface
 	virtual void NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float TotalDuration, const FAnimNotifyEventReference& EventReference) override;
 
 	virtual void NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float FrameDeltaTime, const FAnimNotifyEventReference& EventReference) override;
 
 	virtual void NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference) override;
-
-#if WITH_EDITOR
-	virtual bool ShouldFireInEditor() override;
-#endif
 	// --- End UAnimNotifyState Interface
 
 	void TryTriggerQueuedAbility(USkeletalMeshComponent* MeshComp);

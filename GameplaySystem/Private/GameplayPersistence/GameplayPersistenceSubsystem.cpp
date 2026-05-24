@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayPersistenceSubsystem.h"
@@ -7,6 +7,87 @@
 #include "SaveableObjectInterface.h"
 #include "SaveGameFunctionLibrary.h"
 #include "SaveGameSettings.h"
+#include "Kismet/GameplayStatics.h"
+#include "GameplaySystemComponent.h"
+#include "GameFramework/Character.h"
+#include "SaveGameVersion.h"
+
+FSaveGameStatus::FSaveGameStatus(UWorld* World)
+{
+	check(World);
+
+	if (ACharacter* Player = UGameplayStatics::GetPlayerCharacter(World, 0))
+	{
+		if (UGameplaySystemComponent* GS = UGameplaySystemComponent::GetGameplaySystemFromActor(Player))
+		{
+			PlayerLevel = GS->GetEntityLevel();
+		}
+	}
+
+	if (UGameplayPersistenceSubsystem* GPS = UGameplayPersistenceSubsystem::Get(World))
+	{
+		Playtime = GPS->GetPlaytime();
+	}
+
+	Condition = ESaveGameCondition::ESGC_Empty;
+}
+
+void FSaveGameStatus::ApplyStateOnWorld(UWorld* World)
+{
+	if (UGameplayPersistenceSubsystem* GPS = UGameplayPersistenceSubsystem::Get(World))
+	{
+		GPS->SetPlaytime(Playtime);
+	}
+}
+
+FSaveGameStatus FSaveGameStatus::MakeEmpty()
+{
+	FSaveGameStatus Status;
+	Status.Condition = ESaveGameCondition::ESGC_Empty;
+
+	return Status;
+}
+
+void FSaveGameStatus::UpdateConditionFromArchive(FArchive& Archive)
+{
+	const FCustomVersionContainer& CustomVersion = Archive.GetCustomVersions();
+	if (const FCustomVersion* Version = CustomVersion.GetVersion(FSaveGameVersion::GUID))
+	{
+		if (Version->Version == FSaveGameVersion::LatestVersion)
+		{
+			Condition = ESaveGameCondition::ESGC_Healthy;
+		}
+		else
+		{
+			Condition = ESaveGameCondition::ESGC_Outdated;
+		}
+	}
+	else
+	{
+		Condition = ESaveGameCondition::ESGC_Invalid;
+	}
+}
+
+void operator<<(FArchive& Ar, FSaveGameStatus& Status)
+{
+	FStructuredArchiveFromArchive(Ar).GetSlot() << Status;
+}
+
+void operator<<(FStructuredArchive::FSlot Slot, FSaveGameStatus& Status)
+{
+	FArchive& BaseArchive = Slot.GetUnderlyingArchive();
+	if (BaseArchive.IsTextFormat())
+	{
+		Slot << Status.PlayerLevel;
+		Slot << Status.Playtime;
+	}
+	else
+	{
+		FStructuredArchive::FRecord Record = Slot.EnterRecord();
+		Record << SA_VALUE(TEXT("PlayerLevel"), Status.PlayerLevel);
+		Record << SA_VALUE(TEXT("Playtime"), Status.Playtime);
+	}
+}
 
 FLevelState::FLevelState(bool bIsLoaded)
 {
@@ -26,16 +107,46 @@ void FLevelState::MarkActorDestroyed(AActor* Actor)
 
 	RegisteredActors.Remove(MakeWeakObjectPtr(Actor));
 
-	if (USaveGameFunctionLibrary::WasObjectLoaded(Actor))
+	// Only check if the Actor is loaded if not marked as ShouldAlwaysTrackDestroyed
+	if (!Actor->Implements<USaveableObjectInterface>() || !ISaveableObjectInterface::Execute_ShouldAlwaysTrackDestroyed(Actor))
 	{
-		DestroyedActors.Add(FSoftObjectPath(Actor));
+		if (not USaveGameFunctionLibrary::WasObjectLoaded(Actor))
+		{
+			return;
+		}
 	}
+
+	DestroyedActors.Add(FSoftObjectPath(Actor));
 }
 
 void FLevelState::Reset()
 {
 	RegisteredActors.Empty();
 	DestroyedActors.Empty();
+}
+
+void FLevelState::RemoveStaleActors()
+{
+	TArray<TWeakObjectPtr<AActor>> StaleObjects;
+
+	for (const auto& RegisteredActor : RegisteredActors)
+	{
+		// We clacify the object as stale if the Actor is the WeakObjectPtr is stale or IsValid returns false.
+		if (AActor* Actor = RegisteredActor.Get())
+		{
+			if (IsValid(Actor))
+			{
+				continue;
+			}
+		}
+
+		StaleObjects.Emplace(RegisteredActor);
+	}
+
+	for (const auto& StaleObject : StaleObjects)
+	{
+		RegisteredActors.Remove(StaleObject);
+	}
 }
 
 void FSaveGameState::AddDestroyedActor(AActor* Actor)
@@ -73,6 +184,24 @@ void FSaveGameState::MarkLevelUnloaded(TSoftObjectPtr<UWorld> WorldAsset)
 	MarkLevelUnloaded_Internal(Name);
 }
 
+void FSaveGameState::AddLevel(LevelName Level, bool bIsLoaded)
+{
+	const USaveGameSettings* Settings = GetDefault<USaveGameSettings>();
+
+	if (not Settings->CanSerializeLevel(Level))
+	{
+		return;
+	}
+
+	if (not LevelData.Contains(Level))
+	{
+		FLevelState State;
+		State.bIsLoaded = bIsLoaded;
+		State.bIsPredictedState = true;
+		LevelData.Emplace(Level, State);
+	}
+}
+
 // Note: We want to keep the entries themselves, so we don't get warnings for unloading levels never being marked as loaded.
 void FSaveGameState::ResetState()
 {
@@ -80,6 +209,8 @@ void FSaveGameState::ResetState()
 	{
 		Data.Reset();
 	}
+
+	GlobalData.Reset();
 }
 
 void FSaveGameState::MarkLevelLoaded_Internal(LevelName Level)
@@ -93,6 +224,7 @@ void FSaveGameState::MarkLevelLoaded_Internal(LevelName Level)
 
 	FLevelState& Data = LevelData.FindOrAdd(Level);
 	Data.bIsLoaded = true;
+	Data.bIsPredictedState = false;
 }
 
 void FSaveGameState::MarkLevelUnloaded_Internal(LevelName Level)
@@ -111,6 +243,7 @@ void FSaveGameState::MarkLevelUnloaded_Internal(LevelName Level)
 	if (Data)
 	{
 		Data->bIsLoaded = false;
+		Data->bIsPredictedState = false;
 	}
 }
 
@@ -231,36 +364,48 @@ void UGameplayPersistenceSubsystem::Deinitialize()
 	Super::Deinitialize();
 }
 
+UGameplayPersistenceSubsystem* UGameplayPersistenceSubsystem::Get(const UObject* WorldContext)
+{
+	if (WorldContext)
+	{
+		if (const UGameInstance* GameInstance = UGameplayStatics::GetGameInstance(WorldContext))
+		{
+			UGameplayPersistenceSubsystem* PersistenceSubsystem = GameInstance->GetSubsystem<UGameplayPersistenceSubsystem>();
+			ensure(PersistenceSubsystem);
+
+			return PersistenceSubsystem;
+		}
+	}
+
+	return nullptr;
+}
+
 void UGameplayPersistenceSubsystem::SetIsSavingAllowed(bool bIsAllowed)
 {
 	bIsSavingAllowed = bIsAllowed;
 }
 
-float UGameplayPersistenceSubsystem::GetPlayTime()
+double UGameplayPersistenceSubsystem::GetPlaytime()
 {
-	/*
-	// Game instance has the same lifetime as this
-	float RealTimeSeconds = UGameplayStatics::GetRealTimeSeconds(GetGameInstance());
+	double RealTimeSeconds = UGameplayStatics::GetRealTimeSeconds(this);
 
-	float NewPlayTime = ActiveSaveGameObject->GetPlayTime() + RealTimeSeconds - LatestRealTimeValue;
+	Playtime += RealTimeSeconds - RealTimeValueTimestamp;
 
-	LatestRealTimeValue = RealTimeSeconds;
+	RealTimeValueTimestamp = RealTimeSeconds;
 
-	return NewPlayTime;
-	*/
-	return 0.0f;
+	return Playtime;
+}
+
+void UGameplayPersistenceSubsystem::SetPlaytime(double InPlaytime)
+{
+	Playtime = InPlaytime;
+	RealTimeValueTimestamp = UGameplayStatics::GetRealTimeSeconds(this);;
 }
 
 void UGameplayPersistenceSubsystem::SaveGame(const FString& SlotName)
 {	
 	TSaveGameSerializer<false> BinarySerializer(this);
 	bool bSuccess = BinarySerializer.SaveToDisk(SlotName);
-
-#if !UE_BUILD_SHIPPING && WITH_TEXT_ARCHIVE_SUPPORT
-	// This is for debug purposes only, we want to use binary serialization for smallest file sizes
-	TSaveGameSerializer<false, true> TextSerializer(this);
-	bSuccess &= TextSerializer.SaveToDisk(SlotName);
-#endif
 
 	GP_LOG(Log, TEXT("SaveGame completed for slot '%s' with result: %s"), *SlotName, bSuccess ? TEXT("Success") : TEXT("Failure"));
 }
@@ -277,11 +422,55 @@ void UGameplayPersistenceSubsystem::LoadGame(const FString& SlotName)
 	GP_LOG(Log, TEXT("LoadGame completed for slot '%s' with result: %s"), *SlotName, bSuccess ? TEXT("Success") : TEXT("Failure"));
 }
 
+FSaveGameStatus UGameplayPersistenceSubsystem::GetSaveGameStatus(const FString& SlotName)
+{
+	// The scopes will be overwritten with whatever values we receive when serializing the Status
+	// Lets copy it and then replace the modified container when we are done.
+	FArchiveSectionContainer ScopesCopy = BinaryScopeContainer;
+
+	const TSharedRef<TSaveGameSerializer<true>> BinarySerializer = MakeShared<TSaveGameSerializer<true>>(this);
+	FSaveGameStatus Status = FSaveGameStatus::MakeEmpty();
+	const bool bIsValid = BinarySerializer->LoadStatus(SlotName, Status);
+
+	BinaryScopeContainer = ScopesCopy;
+
+	return Status;
+}
+
+bool UGameplayPersistenceSubsystem::IsGameLoadInProgress()
+{
+	return CurrentSerializer.IsValid();
+}
+
+void UGameplayPersistenceSubsystem::ClearData()
+{
+	check(not CurrentSerializer.IsValid()); // We are currently loading. This will cause crashes or undefined behaviour.
+
+	RealTimeValueTimestamp = 0.0;
+	Playtime = 0.0;
+	SaveGameState.ResetState();
+	BinaryScopeContainer.Reset();
+	BinaryData.Empty();
+
+#if WITH_TEXT_ARCHIVE_SUPPORT
+	TextScopeContainer.Reset();;
+	TextData.Empty();
+#endif //WITH_TEXT_ARCHIVE_SUPPORT
+}
+
 void UGameplayPersistenceSubsystem::OnWorldInitialized(UWorld* World, const UWorld::InitializationValues InitValues)
 {
 	check(World);
 
-	World->AddOnActorPreSpawnInitialization(FOnActorSpawned::FDelegate::CreateUObject(this, &ThisClass::OnActorPreSpawn, World));
+	// Note: We need to preadd the possible streaming levels when initializing world, as OnSublevelLoaded and
+	//		 OnSublevelRemoved are only triggered after loading and unloading respectively, and we need the levels registered before that.
+	TArray<ULevelStreaming*> StreamingLevels = World->GetStreamingLevels();
+	for (auto Level : StreamingLevels)
+	{
+		SaveGameState.AddLevel(LevelUtilities::GetLevelNameFromSoftObjectPtr(Level->GetWorldAsset()), Level->IsLevelLoaded());
+	}
+	
+	World->AddOnPostRegisterAllActorComponentsHandler(FOnPostRegisterAllActorComponents::FDelegate::CreateUObject(this, &ThisClass::OnActorPreSpawn, World));
 	World->AddOnActorDestroyedHandler(FOnActorDestroyed::FDelegate::CreateUObject(this, &ThisClass::OnActorDestroyed, World));
 
 	bIsSavingAllowed = true;
@@ -353,6 +542,7 @@ void UGameplayPersistenceSubsystem::OnActorDestroyed(AActor* Actor, UWorld* Worl
 void UGameplayPersistenceSubsystem::OnLoadCompleted()
 {
 	CurrentSerializer = nullptr;
+	OnGameLoadedDelegate.Broadcast();
 }
 
 void UGameplayPersistenceSubsystem::SaveSublevel(ULevel* Level)

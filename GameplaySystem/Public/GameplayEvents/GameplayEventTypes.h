@@ -1,9 +1,9 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
 #include "CoreMinimal.h"
-
+#include "GameplayTagContainer.h"
 #include "GameplayEventTypes.generated.h"
 
 DECLARE_LOG_CATEGORY_EXTERN(LogGameplayEvent, Log, All)
@@ -72,7 +72,17 @@ struct GAMEPLAYSYSTEM_API FGameplayEventActivationData
 	float Magnitude = 0.0f;
 
 	UPROPERTY(BlueprintReadWrite, EditAnywhere)
-	FVector Location = {};
+	FVector Location = FVector::ZeroVector;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FGameplayTagContainer Context;
+
+	// Needs to be cast to the expected type.
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	uint8 Enum = 0U;
+
+	UPROPERTY(BlueprintReadWrite, EditAnywhere)
+	FHitResult HitResults;
 };
 
 constexpr uint64 INVALID_TICK_FOLLOWER_HANDLE_ID = 0U;

@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayAbility.h"
@@ -8,6 +8,7 @@
 #include "GameplayAbilitySlot.h"
 #include "GameplayTasks/GameplayAbilityTask.h"
 #include "GameplayTasksComponent.h"
+#include "GameplayEffect.h"
 
 using namespace DebugTypes;
 
@@ -305,10 +306,10 @@ bool UGameplayAbility::TryCheckAbilityRequirements(const FGameplayAbilityActivat
 		return false;
 	}
 	
-	// Only an error if it is already active while not having a cooldown
 	if (bIsActive)
 	{
-		GA_LOG(Error, TEXT("GameplayAbility: %s tried to activate while already active."), *GetDisplayName());
+		// Not actually an error, since instance-per-actor abilities might not have cooldowns and instead
+		// use their active state to prevent the same ability from activating multiple times at once.
 		return false;
 	}
 
@@ -318,7 +319,7 @@ bool UGameplayAbility::TryCheckAbilityRequirements(const FGameplayAbilityActivat
 		return false;
 	}
 
-	if (AbilityTags.HasAny(ActivatorComponent->GetBlockingAbilityTags()))
+	if (AbilityTags.HasAnyExact(ActivatorComponent->GetBlockingAbilityTags()))
 	{
 		GA_LOG(Log, TEXT("GameplayAbility: %s not activated due to Ability's blocking tags."), *GetDisplayName());
 		return false;
@@ -377,6 +378,13 @@ void UGameplayAbility::TryActivateAbility(const FGameplayAbilityActivationData& 
 
 	OutActiveGameplayAbility.bHasActivated = true;
 
+	UGameplaySystemComponent* GameplaySystem = GetOwningComponent_Checked();
+	FGameplayEffectHandle Handle;
+	for (const auto GameplayEffect : AbilityActivatedEffects)
+	{
+		GameplaySystem->AddGameplayEffectFromType(GameplayEffect, Handle, GetOwningActor());
+	}
+
 	ActivateAbility(ActivationData, OutActiveGameplayAbility);
 	K2_ActivateAbility(ActivationData, OutActiveGameplayAbility);
 }
@@ -390,6 +398,8 @@ bool UGameplayAbility::TryEndAbility()
 	}
 
 	OnAbilityEndedDelegate.Broadcast(this);
+	OnAbilityEndedDelegate.Clear();
+
 
 	EndAbility();
 	K2_EndAbility();
@@ -412,6 +422,7 @@ bool UGameplayAbility::TryCancelAbility(bool bIsAuthoritative)
 	}
 
 	OnAbilityCancelledDelegate.Broadcast();
+	OnAbilityCancelledDelegate.Clear();
 
 	CancelAbility();
 	K2_CancelAbility();
@@ -561,6 +572,15 @@ FGameplaySystemActorInfo* UGameplayAbility::GetCurrentActorInfo() const
 	return nullptr;
 }
 
+void UGameplayAbility::SendAbilityNotify(FName Notify)
+{
+	if (IsActive())
+	{
+		ReceiveAbilityNotify(Notify);
+
+		K2_ReceiveAbilityNotify(Notify);
+	}
+}
 
 bool UGameplayAbility::CheckAbilityRequirements(const FGameplayAbilityActivationData& ActivationData) const
 {
@@ -599,6 +619,10 @@ void UGameplayAbility::RemoveAbilityEndedModifiers()
 	// This could be modifiers such as attribute changes, GameplayEffects, GameplayTags, blocking tags, etc.
 }
 
+void UGameplayAbility::ReceiveAbilityNotify(FName Notify)
+{
+}
+
 bool UGameplayAbility::IsStaticInstance() const
 {
 	return InstancingPolicy == EInstancingPolicy::EIP_NoLifetime;
@@ -607,7 +631,7 @@ bool UGameplayAbility::IsStaticInstance() const
 bool UGameplayAbility::IsAnimatingAbility() const
 {
 	UGameplaySystemComponent* GameplaySystem = GetOwningComponent_Checked();
-	return GameplaySystem->GetAnimatingAbility() == this;
+	return GameplaySystem->GetAnimMontageInfo()->IsAnimatingAbility(this);
 }
 
 bool UGameplayAbility::StopAbility(bool bIsCancelled)
@@ -681,10 +705,19 @@ bool UGameplayAbility::StopAbility(bool bIsCancelled)
 		GA_LOG(Log, TEXT("Ability: %s was ended."), *GetDisplayName());
 	}
 
-	// Call this after ending tasks since it clears the AnimMontageInfo for the GameplaySystem
+	FGameplayEffectHandle Handle;
+	for (const auto GameplayEffect : AbilityFinishedEffects)
+	{
+		GameplaySystem->AddGameplayEffectFromType(GameplayEffect, Handle, GetOwningActor());
+	}
+
+	// Call this after ending tasks since it clears the AnimMontageInfo for the GameplaySystem, which tasks might depend on being valid
 	GameplaySystem->InformAbilityEnded(this);
 
 	TryApplyAbilityEndedModifiers();
+
+	OnAbilityFinishedDelegate.Broadcast(this);
+	OnAbilityFinishedDelegate.Clear();
 
 	return true;
 }

@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 #pragma once
 
@@ -83,13 +83,21 @@ public:
 	bool Load(const FString& SlotName);
 	template<bool bIsLoading = true, bool bIsTextFormat = false> bool Load(const FString& SlotName) = delete;
 
+	bool LoadFromDisk(const FString& SlotName);
+	template<bool bIsLoading = true, bool bIsTextFormat = false> bool LoadFromDisk(const FString& SlotName) = delete;
+
 	bool SerializeSublevelSingle(ULevel* Level);
+
+	// Loads the file in SlotName and only serializes the Header and Status. Returns true if a Status was serialized, false otherwise.
+	bool LoadStatus(const FString& SlotName, FSaveGameStatus& Status);
 
 	// Sets our data to PersistenceSubsystems current data.
 	const TArray<uint8> GetRemoteData();
 
 	// Sets PersistenceSubsystems data to our current data.
 	void SetRemoteData() const;
+
+	UWorld* GetWorld() const;
 
 	FArchiveSectionContainer& GetSectionContainer() const;
 	
@@ -100,8 +108,9 @@ public:
 
 	void OnMapLoad(UWorld* World);
 
-	// Serializes information about the archive, like Map Name, and position of versioning information
-	void SerializeHeader();
+	// Serializes information about the archive, like Map Name, and position of versioning information.
+	// Also serializes any information we want to display on a Save file in-game, such as player level and playtime.
+	void SerializeHeader(FSaveGameStatus& Status);
 
 	// This further calls SerializeActors and SerializeDestroyedActors within the context of each sublevel.
 	void SerializeSublevels();

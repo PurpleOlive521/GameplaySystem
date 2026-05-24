@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "GameplayTagSystem.h"
@@ -8,23 +8,6 @@
 
 FGameplayTagSystem::FGameplayTagSystem()
 {
-}
-
-FGameplayTagSystemSaveObject FGameplayTagSystem::GetSaveData() const
-{
-	FGameplayTagSystemSaveObject SaveData;
-	SaveData.ValidityKey.MakeValid();
-
-	SaveData.GameplayTags = GetGameplayTagContainer();
-	GetGameplayTagTable(SaveData.TagCountTable);
-
-	return SaveData;
-}
-
-void FGameplayTagSystem::LoadFromData(const FGameplayTagSystemSaveObject& GameplayTagsSaveData)
-{
-	SetGameplayTagContainer(GameplayTagsSaveData.GameplayTags);
-	SetGameplayTagTable(GameplayTagsSaveData.TagCountTable);
 }
 
 void FGameplayTagSystem::AddTag(const FGameplayTag& TagToAdd)
@@ -83,9 +66,9 @@ bool FGameplayTagSystem::HasAllTags(const FGameplayTagContainer& TagsToCheckAgai
 	return GameplayTags.HasAll(TagsToCheckAgainst);
 }
 
-int FGameplayTagSystem::GetTagCount(const FGameplayTag& TagToCheck) const
+int32 FGameplayTagSystem::GetTagCount(const FGameplayTag& TagToCheck) const
 {
-	if (const int* Count = TagCountTable.Find(TagToCheck))
+	if (const int32* Count = TagCountTable.Find(TagToCheck))
 	{
 		return *Count;
 	}
@@ -93,12 +76,20 @@ int FGameplayTagSystem::GetTagCount(const FGameplayTag& TagToCheck) const
 	return 0;
 }
 
-int FGameplayTagSystem::GetTotalTagCount() const
+void FGameplayTagSystem::SetTagCount(const FGameplayTag& TagToSet, int32 NewCount)
+{
+	int32 TagCount = GetTagCount(TagToSet);
+
+	const int32 Delta = NewCount - TagCount;
+	ModifyTagCount(TagToSet, Delta);
+}
+
+int32 FGameplayTagSystem::GetTotalTagCount() const
 {
 	return GameplayTags.Num();
 }
 
-void FGameplayTagSystem::ModifyTagCount(const FGameplayTag& TagToModify, int Delta)
+void FGameplayTagSystem::ModifyTagCount(const FGameplayTag& TagToModify, int32 Delta)
 {
 	if (Delta == 0)
 	{
@@ -113,7 +104,7 @@ void FGameplayTagSystem::ModifyTagCount(const FGameplayTag& TagToModify, int Del
 		const FGameplayTag& CurrentTag = *TagIt;
 
 		// Replace old Count with Delta applied
-		int Count = TagCountTable.FindOrAdd(CurrentTag);
+		int32 Count = TagCountTable.FindOrAdd(CurrentTag);
 		Count += Delta;
 		TagCountTable.Add(CurrentTag, Count);
 
@@ -137,10 +128,10 @@ void FGameplayTagSystem::ModifyTagCount(const FGameplayTag& TagToModify, int Del
 	// Only broadcast once all tags are modified
 	for (auto& Tag : ExpandedTags)
 	{
-		const int Count = GetTagCount(Tag);
+		const int32 Count = GetTagCount(Tag);
 		OnGameplayTagModifiedDelegate.Broadcast(Tag, Count, Delta);
 
-		const int OriginalValue = Count - Delta;
+		const int32 OriginalValue = Count - Delta;
 		// Tag was removed
 		if (Count <= 0 && OriginalValue > 0)
 		{
@@ -164,19 +155,19 @@ FGameplayTagContainer FGameplayTagSystem::GetGameplayTagContainer() const
 	return GameplayTags;
 }
 
-void FGameplayTagSystem::SetGameplayTagTable(const TMap<FGameplayTag, int>& GameplayTagTableIn)
+void FGameplayTagSystem::SetGameplayTagTable(const TMap<FGameplayTag, int32>& GameplayTagTableIn)
 {
 	TagCountTable = GameplayTagTableIn;
 }
 
-void FGameplayTagSystem::GetGameplayTagTable(TMap<FGameplayTag, int>& GameplayTagTableOut) const
+void FGameplayTagSystem::GetGameplayTagTable(TMap<FGameplayTag, int32>& GameplayTagTableOut) const
 {
 	GameplayTagTableOut = TagCountTable;
 }
 
-TMap<FGameplayTag, int>::TConstIterator FGameplayTagSystem::GetConstGameplayTagIterator() const
+TMap<FGameplayTag, int32>::TConstIterator FGameplayTagSystem::GetConstGameplayTagIterator() const
 {
-	return TMap<FGameplayTag, int>::TConstIterator(TagCountTable);
+	return TMap<FGameplayTag, int32>::TConstIterator(TagCountTable);
 }
 
 void FGameplayTagSystem::ToStringArray(TArray<FString>& OutString) const

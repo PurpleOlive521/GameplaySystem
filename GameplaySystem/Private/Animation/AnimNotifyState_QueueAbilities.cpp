@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "AnimNotifyState_QueueAbilities.h"
@@ -9,6 +9,13 @@
 #include "GameplayTagContainer.h"
 #include "DevelopmentTypes.h"
 
+
+UAnimNotifyState_QueueAbilities::UAnimNotifyState_QueueAbilities()
+{
+#if WITH_EDITORONLY_DATA
+	bShouldFireInEditor = false;
+#endif //WITH_EDITORONLY_DATA
+}
 
 void UAnimNotifyState_QueueAbilities::NotifyBegin(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float TotalDuration, const FAnimNotifyEventReference& EventReference)
 {
@@ -34,6 +41,8 @@ void UAnimNotifyState_QueueAbilities::NotifyBegin(USkeletalMeshComponent* MeshCo
 
 void UAnimNotifyState_QueueAbilities::NotifyTick(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, float FrameDeltaTime, const FAnimNotifyEventReference& EventReference)
 {
+	Super::NotifyTick(MeshComp, Animation, FrameDeltaTime, EventReference);
+
 	if (TriggerPolicy == EQueueTriggers::EQT_AnimNotifyTick)
 	{
 		TryTriggerQueuedAbility(MeshComp);
@@ -43,8 +52,6 @@ void UAnimNotifyState_QueueAbilities::NotifyTick(USkeletalMeshComponent* MeshCom
 
 void UAnimNotifyState_QueueAbilities::NotifyEnd(USkeletalMeshComponent* MeshComp, UAnimSequenceBase* Animation, const FAnimNotifyEventReference& EventReference)
 {
-	Super::NotifyEnd(MeshComp, Animation, EventReference);
-
 	// Disable buffering before trying following EQueueTriggers policy
 	if (GameplayTagSystem)
 	{
@@ -55,17 +62,9 @@ void UAnimNotifyState_QueueAbilities::NotifyEnd(USkeletalMeshComponent* MeshComp
 	{
 		TryTriggerQueuedAbility(MeshComp);
 	}
+
+	Super::NotifyEnd(MeshComp, Animation, EventReference);
 }
-
-
-#if WITH_EDITOR
-
-bool UAnimNotifyState_QueueAbilities::ShouldFireInEditor()
-{
-	return false;
-}
-
-#endif // WITH_EDITOR
 
 void UAnimNotifyState_QueueAbilities::TryTriggerQueuedAbility(USkeletalMeshComponent* MeshComp)
 {

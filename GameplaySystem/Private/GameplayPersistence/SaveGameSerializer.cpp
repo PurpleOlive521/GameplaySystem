@@ -1,4 +1,4 @@
-// Copyright (c) 2026, Oliver Österlund Stare. All rights reserved.
+// Copyright (c) 2026, Oliver Ã–sterlund Stare. All rights reserved.
 
 
 #include "SaveGameSerializer.h"
@@ -54,17 +54,16 @@ inline TSaveGameSerializer<bIsLoading, bIsTextFormat>::FSerializationScope::FSer
 
 	// Prewrite our size
 	{
-		uint64 OffsetSize;
+		uint64 OffsetSize = 0;
 
 		if (SAVING)
 		{
-			OffsetSize = Section.GetSize();
-
 			// If there is already data there, skip writing and move a uint64 over instead.
 			// Note: This is important for when we Terminate and avoid overwriting data. If we write here, we will zero out any existing OffsetSize and
 			//		 ruin data, when we can just skip it and write over it if we don't get Terminate'd in the destructor. Win-win.
 			uint64 Destination = 0U;
-			check(FMath::AddAndCheckForOverflow(uint64(Serializer.Archive.Tell()), sizeof(uint64), Destination));
+			const bool bNoOverflow = FMath::AddAndCheckForOverflow(uint64(Serializer.Archive.Tell()), sizeof(uint64), Destination);
+			check(bNoOverflow);
 			if (Serializer.Data.Num() >= Destination)
 			{
 				Serializer.Archive.Seek(Destination);
@@ -149,7 +148,8 @@ TSaveGameSerializer<bIsLoading, bIsTextFormat>::FSerializationScope::~FSerializa
 	if (not CopiedData.IsEmpty())
 	{
 		uint64 TotalSize = 0U;
-		check(FMath::AddAndCheckForOverflow(uint64(Section.EndOffset), uint64(CopiedData.Num()), TotalSize));
+		const bool bNoOverflow = FMath::AddAndCheckForOverflow(uint64(Section.EndOffset), uint64(CopiedData.Num()), TotalSize);
+		check(bNoOverflow);
 
 		check(TotalSize <= INT32_MAX); // The new total size will exceed what the array can hold.
 
@@ -165,7 +165,7 @@ TSaveGameSerializer<bIsLoading, bIsTextFormat>::FSerializationScope::~FSerializa
 
 	check(Section.PreviousSize != 0);
 
-	// This will invalidate Section, but we are going out of Section after this
+	// This will invalidate Section, but we are going out of scope after this
 	if (not OptionalNewName.IsEmpty())
 	{
 		CopiedData.Empty(); // Empty so we don't copy the data around too
@@ -208,7 +208,8 @@ bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::Save()
 {
 	check(SAVING);
 
-	SerializeHeader();
+	FSaveGameStatus Status = FSaveGameStatus(GetWorld());
+	SerializeHeader(Status);
 
 	SerializeSublevels();
 
@@ -224,7 +225,7 @@ bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::Save()
 	{
 		// We've updated the VersionOffset, let's go back to the start and rewrite the header
 		Archive.Seek(0);
-		SerializeHeader();
+		SerializeHeader(Status);
 	}
 
 	// Be sure to close this, as you'll be missing closed braces for JSON archives
@@ -268,22 +269,12 @@ bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::Load(const FString& SlotNam
 {
 	check(LOADING);
 
-	TArray<uint8> CompressedData;
-	ISaveGameSystem* SaveSystem = IPlatformFeaturesModule::Get().GetSaveGameSystem();
-	if (SaveSystem && SaveSystem->LoadGame(false /* bAttemptToUseUI */, *GetSaveName(SlotName), USER_SLOT_INDEX, CompressedData))
-	{
-		if (USE_FILE_COMPRESSION)
-		{
-			// Decompress the loaded save game data
-			FSaveGameMemoryArchive CompressorArchive(CompressedData);
-			SerializeCompressedData<bIsLoading>(CompressorArchive, Data);
-		}
-		else
-		{
-			Data = CompressedData;
-		}
+	const bool bResult = LoadFromDisk(SlotName);
 
-		SerializeHeader();
+	if(bResult)
+	{
+		FSaveGameStatus Status;
+		SerializeHeader(Status);
 
 		{
 			const uint64 InitialPosition = Archive.Tell();
@@ -298,6 +289,9 @@ bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::Load(const FString& SlotNam
 			SerializeVersions();
 		}
 
+		// Needs to be done after SerializeVersions so the Archives version is set.
+		Status.ApplyStateOnWorld(GetWorld());
+
 		// If we don't have a map, we should bail
 		if (MapName.IsNone())
 		{
@@ -305,8 +299,8 @@ bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::Load(const FString& SlotNam
 			return false;
 		}
 
-		check(PersistenceSubsystem.IsValid());
-		UWorld* World = PersistenceSubsystem->GetWorld();
+		// We want to rebuild SaveGameState with the new worlds data
+		PersistenceSubsystem->SaveGameState.ResetState();
 
 		// When our map has loaded, call the OnMapLoad method and resume loading from there
 		FCoreUObjectDelegates::PostLoadMapWithWorld.AddThreadSafeSP(this, &TSaveGameSerializer::OnMapLoad);
@@ -320,26 +314,67 @@ bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::Load(const FString& SlotNam
 }
 
 template<bool bIsLoading, bool bIsTextFormat>
+bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::LoadFromDisk(const FString& SlotName)
+{
+	TArray<uint8> CompressedData;
+	ISaveGameSystem* SaveSystem = IPlatformFeaturesModule::Get().GetSaveGameSystem();
+
+	if (not SaveSystem || not SaveSystem->DoesSaveGameExist(*GetSaveName(SlotName), USER_SLOT_INDEX))
+	{
+		return false;
+	}
+
+	if (SaveSystem->LoadGame(false /* bAttemptToUseUI */, *GetSaveName(SlotName), USER_SLOT_INDEX, CompressedData))
+	{
+		if (USE_FILE_COMPRESSION)
+		{
+			// Decompress the loaded save game data
+			FSaveGameMemoryArchive CompressorArchive(CompressedData);
+			SerializeCompressedData<bIsLoading>(CompressorArchive, Data);
+		}
+		else
+		{
+			Data = CompressedData;
+		}
+
+		return true;
+	}
+
+	return false;
+}
+
+template<bool bIsLoading, bool bIsTextFormat>
 bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeSublevelSingle(ULevel* Level)
 {
-	UWorld* World = PersistenceSubsystem->GetWorld();
 	LevelName Name = LevelUtilities::GetLevelNameFromLevel(Level);
 	FString NameAsString = Name.ToString();
 
 	if (IsDataEmpty())
 	{
-		// Make a valid save file with current game state before we proceed.
-		TSaveGameSerializer<false, bIsTextFormat> Serializer(PersistenceSubsystem.Get());
-		bool bSuccess = Serializer.Save();
-
-		GP_LOG(Log, TEXT("Creating SaveGame for requester Sublevel '%s' finished with result: %s"), *Name.ToString(), bSuccess ? TEXT("Success") : TEXT("Failure"));
-
-		Data = GetRemoteData();
-
-		if (IsDataEmpty())
+		if (SAVING)
 		{
-			GP_LOG(Error, TEXT("Tried to Single Serialize Sublevel '%s' with no previous SaveData on record!"), *Name.ToString());
-			return false;
+			// Make a valid save file with current game state before we proceed.
+			TSaveGameSerializer<false, bIsTextFormat> Serializer(PersistenceSubsystem.Get());
+			bool bSuccess = Serializer.Save();
+
+			GP_LOG(Log, TEXT("Creating SaveGame for requester Sublevel '%s' finished with result: %s"), *Name.ToString(), bSuccess ? TEXT("Success") : TEXT("Failure"));
+
+			Data = GetRemoteData();
+
+			if (IsDataEmpty())
+			{
+				GP_LOG(Error, TEXT("Tried to Single Serialize Sublevel '%s' with no previous SaveData on record!"), *Name.ToString());
+				return false;
+			}
+		}
+
+		if (LOADING) 
+		{
+			if (IsDataEmpty())
+			{
+				GP_LOG(Log, TEXT("Loading Sublevel '%s' skipped due to no previous SaveData existing."), *Name.ToString());
+				return true;
+			}
 		}
 	}
 
@@ -388,11 +423,32 @@ bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeSublevelSingle(ULe
 		Archive.Seek(LastSublevelOffsets->EndOffset);
 	}
 
-	SerializeSublevel(LevelMap, World, Name, &LevelData, true /* bUseGameState */);
+	SerializeSublevel(LevelMap, GetWorld(), Name, &LevelData, true /* bUseGameState */);
 
 	SetRemoteData();
 
 	return true;
+}
+
+template<bool bIsLoading, bool bIsTextFormat>
+bool TSaveGameSerializer<bIsLoading, bIsTextFormat>::LoadStatus(const FString& SlotName, FSaveGameStatus& Status)
+{
+	check(LOADING);
+
+	const bool bResult = LoadFromDisk(SlotName);
+
+	if (bResult)
+	{
+		SerializeHeader(Status);
+
+		Archive.Seek(VersionOffset);
+		SerializeVersions();
+	
+		Status.UpdateConditionFromArchive(Archive);
+		return true;
+	}
+
+	return false;
 }
 
 template<bool bIsLoading, bool bIsTextFormat>
@@ -415,10 +471,17 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SetRemoteData() const
 	if (bIsTextFormat)
 	{
 		PersistenceSubsystem->TextData = Data;
+		return;
 	}
 #endif //WITH_TEXT_ARCHIVE_SUPPORT
 
 	PersistenceSubsystem->BinaryData = Data;
+}
+
+template<bool bIsLoading, bool bIsTextFormat>
+UWorld* TSaveGameSerializer<bIsLoading, bIsTextFormat>::GetWorld() const
+{
+	return PersistenceSubsystem->GetWorld();
 }
 
 template<bool bIsLoading, bool bIsTextFormat>
@@ -437,7 +500,7 @@ FArchiveSectionContainer& TSaveGameSerializer<bIsLoading, bIsTextFormat>::GetSec
 template <bool bIsLoading, bool bIsTextFormat>
 FString TSaveGameSerializer<bIsLoading, bIsTextFormat>::GetSaveName(const FString& SlotName)
 {
-	FString SaveName = TEXT("AASaveGame"); // TODO: Switch out with slot specific
+	FString SaveName = TEXT("AASaveGame");
 
 	SaveName.Append(SlotName);
 
@@ -467,7 +530,7 @@ template <bool bIsLoading, bool bIsTextFormat>
 void TSaveGameSerializer<bIsLoading, bIsTextFormat>::OnMapLoad(UWorld* World)
 {
 	FCoreUObjectDelegates::PostLoadMapWithWorld.RemoveAll(this);
-	check(PersistenceSubsystem->GetWorld() == World);
+	check(GetWorld() == World);
 
 	SerializeSublevels();
 
@@ -499,16 +562,14 @@ FORCEINLINE_DEBUGGABLE void SerializeCompressedData(FArchive& Ar, TArray<uint8>&
 }
 
 template <bool bIsLoading, bool bIsTextFormat>
-void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeHeader()
+void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeHeader(FSaveGameStatus& Status)
 {
 	FSerializationScope Section = MAKE_SCOPE("Header", Header);
-
-	const UWorld* World = PersistenceSubsystem->GetWorld();
 
 	// If we already have a map name, don't change it
 	if (SAVING && MapName.IsNone())
 	{
-		FString LevelPackageName = World->GetOutermost()->GetLoadedPath().GetPackageName();
+		FString LevelPackageName = GetWorld()->GetOutermost()->GetLoadedPath().GetPackageName();
 		MapName = FName(LevelPackageName);
 	}
 
@@ -540,13 +601,23 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeHeader()
 		Archive.SetEngineVer(EngineVersion);
 		Archive.SetUEVer(PackageVersion);
 	}
+
+	if (SAVING)
+	{
+		Status = FSaveGameStatus(GetWorld());
+	}
+
+	RootRecord << SA_VALUE(TEXT("SaveGameStatus"), Status);
+
+	if (LOADING)
+	{
+		Status.UpdateConditionFromArchive(Archive);
+	}
 }
 
 template<bool bIsLoading, bool bIsTextFormat>
 void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeSublevels()
 {
-	UWorld* World = PersistenceSubsystem->GetWorld();
-
 	int32 NumSublevels;
 
 	if (SAVING)
@@ -558,7 +629,6 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeSublevels()
 
 	if (LOADING)
 	{
-		PersistenceSubsystem->SaveGameState.ResetState();
 		PersistenceSubsystem->SaveGameState.LevelData.Reserve(NumSublevels);
 	}
 
@@ -582,11 +652,25 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeSublevels()
 			Name = LevelDataIt.Key();
 		}
 
-		SerializeSublevel(LevelMap, World, Name, LevelData, false /* bUseGameState */);
+		// Find the Sublevels offset to serialize at if we have serialized it before
+		// TODO: Make these calls part of the Sections? So that we have it be formed automatically for everything.
+		const FArchiveSection* LevelOffsets = SectionContainer.GetSection(Name.ToString());
+		if (LevelOffsets)
+		{
+			Archive.Seek(LevelOffsets->StartOffset);
+		}
+
+		SerializeSublevel(LevelMap, GetWorld(), Name, LevelData, false /* bUseGameState */);
 	}
 	
 	// Note: It's important that we do this last, in case any sublevels that are serialized contain global data Actors that we want to find.
-	SerializeGlobals(World);
+	const FArchiveSection* GlobalOffsets = SectionContainer.GetSection("GlobalData");
+	if (GlobalOffsets)
+	{
+		Archive.Seek(GlobalOffsets->StartOffset);
+	}
+
+	SerializeGlobals(GetWorld());
 }
 
 template<bool bIsLoading, bool bIsTextFormat>
@@ -629,9 +713,8 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeSublevel(FStructur
 	if (SAVING)
 	{
 		// Previous save data for it should already be in there, with bIsLevelLoaded updated to match
-		if (not bIsLevelLoaded)
+		if (not bIsLevelLoaded && SectionContainer.HasSection(LevelNameAsString))
 		{
-
 			// Move to the end of our data before returning
 			if (const FArchiveSection* SublevelScope = SectionContainer.GetSection(LevelNameAsString))
 			{
@@ -662,6 +745,7 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeSublevel(FStructur
 				ActionInfo.UUID = GetNextRequestID();
 
 				UGameplayStatics::LoadStreamLevelBySoftObjectPtr(World, WorldAsset, true /* bMakeVisibleAfterLoad */, true /* bShouldBlockOnLoad */, ActionInfo);
+				UGameplayStatics::FlushLevelStreaming(World); // Forces LevelStreaming to use bShouldBlockOnUnload and block the main thread, otherwise it's done asyncronously
 
 				ensure(LevelStreaming->IsLevelLoaded());
 			}
@@ -720,7 +804,7 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeActors(FStructured
 	FTopLevelAssetPath LevelAssetPath;
 
 	// Serializing sublevel data
-	if (bSerializingSublevel)
+	if (bSerializingSublevel && Level)
 	{
 		LevelAssetPath = FTopLevelAssetPath(Level->GetPackage()->GetFName(), Level->GetOuter()->GetFName());
 	}
@@ -786,7 +870,20 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeActors(FStructured
 						SpawnParameters.Name = *ActorName;
 						SpawnParameters.bNoFail = true;
 
+						// We don't need adjustments to avoid spawning in objects since they will have their correct location serialized soon anyways
+						SpawnParameters.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+						SpawnParameters.NameMode = FActorSpawnParameters::ESpawnActorNameMode::Required_ReturnNull;
+
 						Actor = World->SpawnActor(ActorClass, nullptr, nullptr, SpawnParameters);
+
+						// TODO: Look into how this condition is even met
+						if (!Actor) 
+						{
+							// The Actor isn't loaded but is already spawned before we got to it ourselves.
+							Actor = FindObjectFast<AActor>(Level, *ActorName);
+
+							check(Actor); // The Actors name is taken, but we can't find it ourselves in the level.
+						}
 
 						if (SpawnID.IsValid() && Actor->Implements<USaveableObjectInterface>())
 						{
@@ -798,15 +895,24 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeActors(FStructured
 					{
 						const FString ActorSubPath = LEVEL_SUBPATH_PREFIX + ActorName;
 
+						ensureAlways(LevelAssetPath.IsValid());
+
 						// We potentially have a spawned actor that other actors reference
 						// If the name has changed, be sure to redirect the old actor path to the new one
 						ProxyArchive.AddRedirect(FSoftObjectPath(LevelAssetPath, ActorSubPath), FSoftObjectPath(Actor));
 					}
 
-					check(IsValid(Actor));
+					check(Actor);
+
+					// TODO: Deal with this some other way? Or is interacting with GC-pending objects the only way?
+					// We allow GC-pending Actors, since they still get picked up by the save system and should be okay to interact with.
+					if (not Actor->HasAnyFlags(RF_MirroredGarbage))
+					{
+						check(IsValid(Actor));
+					}
 				});
+			}
 		}
-	}
 	else
 	{
 		NumActors = LevelData.RegisteredActors.Num();
@@ -821,6 +927,7 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeActors(FStructured
 
 		FStructuredArchive::FMap ActorMap = Record.EnterMap(TEXT("LevelActors"), NumActors);
 
+		LevelData.RemoveStaleActors();
 		auto ActorsIt = LevelData.RegisteredActors.CreateConstIterator();
 
 		// Actually serialize the actor data and their properties
@@ -831,17 +938,22 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeActors(FStructured
 			if (LOADING)
 			{
 				Actor = Actors[ActorIdx];
+
+				if (not Actor)
+				{
+					continue;
+				}
 			}
 			else
 			{
 				Actor = ActorsIt->Get();
 				++ActorsIt;
+
+				check(IsValid(Actor));
 			}
 
-			check(IsValid(Actor));
-
 			// Do the actual serialization of the properties
-			SerializeActor(ActorMap, Actor, LevelData, [&](const FString&, const FSoftClassPath&, const FGuid& SpawnID, FStructuredArchive::FSlot& ActorSlot)
+			SerializeActor(ActorMap, Actor, LevelData, [&](const FString& ActorName, const FSoftClassPath&, const FGuid& SpawnID, FStructuredArchive::FSlot& ActorSlot)
 				{
 					Actor->SerializeScriptProperties(ActorSlot.EnterAttribute(TEXT("Properties")));
 
@@ -854,11 +966,24 @@ void TSaveGameSerializer<bIsLoading, bIsTextFormat>::SerializeActors(FStructured
 					// OnSerialize can't be implemented if the interface isn't natively implemented in which case this already fails
 					if (ISaveableObjectInterface* Interface = Cast<ISaveableObjectInterface>(Actor))
 					{
-						Interface->OnSerialize(SaveGameArchive, bIsLoading);
+						const bool bSuccess = Interface->OnSerialize(SaveGameArchive, bIsLoading);
+
+						if (not bSuccess)
+						{
+							GS_LOG(Error, TEXT("OnSerialize failed for Actor '%s' during %s."), *ActorName, bIsLoading ? TEXT("load") : TEXT("save"));
+						}
 					}
 
-					// Always call after native OnSerialize
-					ISaveableObjectInterface::Execute_K2_OnSerialize(Actor, SaveGameArchive, bIsLoading);
+					UFunction* Func = Actor->FindFunction("K2_OnSerialize");
+					if (Func && Func->IsInBlueprint())
+					{
+						const bool bSuccess = ISaveableObjectInterface::Execute_K2_OnSerialize(Actor, SaveGameArchive, bIsLoading);
+
+						if (not bSuccess)
+						{
+							GS_LOG(Error, TEXT("Blueprint OnSerialize failed for Actor '%s' during %s."), *ActorName, bIsLoading ? TEXT("load") : TEXT("save"));
+						}
+					}
 				});
 		}
 	}
